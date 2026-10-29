@@ -16,4 +16,6 @@ export type TabRequest = { kind: 'get-context' } | { kind: 'get-selection' };
 export type RuntimeMessage =
   | { kind: 'page-context'; context: PageContext }
   | { kind: 'attach'; tabId: number; selection: CodeSelection | null }
-  | { kind: 'panel-ready' };
+  | { kind: 'panel-ready' }
+  /** The in-page "Ask AI" button was clicked; opens the side panel with the selection. */
+  | { kind: 'ask-selection'; selection: CodeSelection };

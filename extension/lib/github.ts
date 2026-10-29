@@ -93,6 +93,8 @@ export function readDiffSelection(): CodeSelection | null {
   const range = sel.getRangeAt(0);
   const startEl = elementOf(range.startContainer);
   const endEl = elementOf(range.endContainer);
+  const fields = 'textarea, input, [contenteditable="true"]';
+  if (startEl?.closest(fields) || document.activeElement?.matches(fields)) return null;
   const path = filePathFor(startEl) ?? filePathFor(endEl);
   let startLine = lineNumberFor(startEl);
   let endLine = lineNumberFor(endEl) ?? startLine;
@@ -112,12 +114,63 @@ export function readHashSelection(hash = location.hash): CodeSelection | null {
   const m = hash.match(/^#diff-([0-9a-f]{64})([LR])(\d+)(?:-([LR])(\d+))?$/);
   if (!m) return null;
   const [, fileAnchor, side, start, , end] = m;
+  return lineSelection(fileAnchor, side, Number(start), end ? Number(end) : Number(start));
+}
+
+function lineSelection(fileAnchor: string, side: string, start: number, end: number): CodeSelection {
   const fileEl = document.getElementById(`diff-${fileAnchor}`);
   const path = fileEl ? filePathFor(fileEl) ?? filePathFor(fileEl.querySelector('[data-file-path], [data-path], a[href^="#diff-"]')) : undefined;
-  let startLine = Number(start);
-  let endLine = end ? Number(end) : startLine;
-  if (endLine < startLine) [startLine, endLine] = [endLine, startLine];
+  const [startLine, endLine] = end < start ? [end, start] : [start, end];
   return { path, fileAnchor, side: side === 'L' ? 'old' : 'new', startLine, endLine };
+}
+
+/** The file anchor of the diff file containing `el`, from its "diff-<sha256>" id. */
+function fileAnchorFor(el: Element): string | undefined {
+  for (let cur: Element | null = el; cur; cur = cur.parentElement) {
+    const m = cur.id.match(/^diff-([0-9a-f]{64})$/);
+    if (m) return m[1];
+  }
+  return undefined;
+}
+
+/** "Add a comment on lines R15 to R30" / "Add a comment on line L7" in GitHub's inline comment box. */
+export const COMMENT_HEADER = /^Add a comment on lines? ([LR])(\d+)(?: to ([LR])(\d+))?$/;
+
+export function readCommentBoxSelection(header: Element): CodeSelection | null {
+  const m = header.textContent?.trim().match(COMMENT_HEADER);
+  const fileAnchor = fileAnchorFor(header);
+  if (!m || !fileAnchor) return null;
+  const [, side, start, , end] = m;
+  return lineSelection(fileAnchor, side, Number(start), end ? Number(end) : Number(start));
+}
+
+/** The element showing a selection's last line number, to place the in-page button next to. */
+export function lineElementFor(s: CodeSelection): Element | null {
+  if (!s.fileAnchor || !s.endLine) return null;
+  const letter = s.side === 'old' ? 'L' : 'R';
+  const id = `diff-${s.fileAnchor}${letter}${s.endLine}`;
+  const direct = document.getElementById(id) ?? document.querySelector(`[data-line-anchor="${id}"]`);
+  if (direct) return direct;
+  const fileEl = document.getElementById(`diff-${s.fileAnchor}`);
+  if (!fileEl) return null;
+  const n = String(s.endLine);
+  const sideAttr = s.side === 'old' ? 'left' : 'right';
+  const numbered = [...fileEl.querySelectorAll(`[data-line-number="${n}"]`)];
+  const exact = numbered.find((el) => el.getAttribute('data-diff-side') === sideAttr);
+  if (exact) return exact;
+  // Line-number cells that show only the number: the old side comes first, the new side last.
+  const cells = numbered.length
+    ? numbered
+    : [...fileEl.querySelectorAll('td, [role="gridcell"], [role="cell"], span, div')].filter(
+        (el) =>
+          el.childElementCount === 0 &&
+          el.textContent?.trim() === n &&
+          el.closest('tr, [role="row"]') &&
+          !el.closest('code, pre, [class*="diff-text"], [class*="blob-code"]'),
+      );
+  if (!cells.length) return null;
+  const byX = cells.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+  return s.side === 'old' ? byX[0] : byX[byX.length - 1];
 }
 
 export function selectionLabel(s: CodeSelection): string {

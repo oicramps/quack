@@ -11,9 +11,16 @@ export default defineBackground(() => {
   // The toolbar icon opens Chrome's side panel.
   browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
-  // Cmd/Ctrl+Shift+K: open the panel and attach the selected diff lines. A
-  // keyboard command counts as a user gesture, which sidePanel.open requires.
+  // Cmd/Ctrl+Shift+K and the in-page "Ask AI" button open the panel and attach
+  // the selected diff lines. sidePanel.open needs the user gesture, so it is
+  // called before anything asynchronous.
   let pendingAttach: { tabId: number; selection: CodeSelection | null } | null = null;
+
+  const attach = (tabId: number, selection: CodeSelection | null) => {
+    pendingAttach = { tabId, selection };
+    // Reaches the panel if it was already open; otherwise it asks on load.
+    browser.runtime.sendMessage({ kind: 'attach', ...pendingAttach } satisfies RuntimeMessage).catch(() => {});
+  };
 
   browser.commands.onCommand.addListener((command, tab) => {
     if (command !== 'ask-about-selection' || tab?.id === undefined) return;
@@ -22,17 +29,17 @@ export default defineBackground(() => {
     browser.tabs
       .sendMessage(tabId, { kind: 'get-selection' } satisfies TabRequest)
       .catch(() => null)
-      .then((selection) => {
-        pendingAttach = { tabId, selection: (selection as CodeSelection | null) ?? null };
-        // Reaches the panel if it was already open; otherwise it asks on load.
-        browser.runtime.sendMessage({ kind: 'attach', ...pendingAttach } satisfies RuntimeMessage).catch(() => {});
-      });
+      .then((selection) => attach(tabId, (selection as CodeSelection | null) ?? null));
   });
 
-  browser.runtime.onMessage.addListener((msg: RuntimeMessage, _sender, sendResponse) => {
-    if (msg?.kind !== 'panel-ready') return false;
-    sendResponse(pendingAttach);
-    pendingAttach = null;
+  browser.runtime.onMessage.addListener((msg: RuntimeMessage, sender, sendResponse) => {
+    if (msg?.kind === 'ask-selection' && sender.tab?.id !== undefined) {
+      browser.sidePanel.open({ windowId: sender.tab.windowId }).catch(() => {});
+      attach(sender.tab.id, msg.selection);
+    } else if (msg?.kind === 'panel-ready') {
+      sendResponse(pendingAttach);
+      pendingAttach = null;
+    }
     return false;
   });
 
