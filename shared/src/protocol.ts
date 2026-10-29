@@ -44,6 +44,10 @@ export interface PrRef {
 
 export interface CodeSelection {
   path?: string;
+  /** GitHub's file anchor (SHA-256 of the path), used when the page doesn't expose the path. */
+  fileAnchor?: string;
+  /** 'old' when the lines refer to the base version (a deleted or changed line's left side). */
+  side?: 'old' | 'new';
   startLine?: number;
   endLine?: number;
   /** The selected text, so the agent sees the code even when line numbers can't be read. */

@@ -4,6 +4,7 @@ import { MessageDecoder, encodeMessage } from '../src/framing.ts';
 import { isAllowedOrigin } from '../src/host.ts';
 import { buildFollowUp, buildPrompt } from '../src/prompt.ts';
 import { parseGitHubRemote } from '../src/repo.ts';
+import { fileAnchor } from '../src/selection.ts';
 import { ValidationError, isSafeRepoPath, validateMessage } from '../src/validate.ts';
 
 test('framing round-trips messages split across chunks', () => {
@@ -74,6 +75,10 @@ test('hostile input is rejected before it reaches git', () => {
     { type: 'exec', requestId: 'r1' },
   ];
   for (const m of bad) assert.throws(() => validateMessage(m), ValidationError, JSON.stringify(m));
+});
+
+test("file anchors match GitHub's diff-<sha256(path)> ids", () => {
+  assert.equal(fileAnchor('packages/wxt/src/cli/commands.ts'), '9669d08fa74cd8d6b2f85d57c371cc57d15accb62aef510ef2fd6e41d4a4ef4c');
 });
 
 test('repo-relative paths', () => {

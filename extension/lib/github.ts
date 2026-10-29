@@ -104,9 +104,26 @@ export function readDiffSelection(): CodeSelection | null {
   return { path, startLine, endLine, text: text.slice(0, 20_000) };
 }
 
+/**
+ * Lines picked by clicking line numbers, which GitHub records in the URL as
+ * "#diff-<sha256 of path>R45-R52" (R = new file, L = old file).
+ */
+export function readHashSelection(hash = location.hash): CodeSelection | null {
+  const m = hash.match(/^#diff-([0-9a-f]{64})([LR])(\d+)(?:-([LR])(\d+))?$/);
+  if (!m) return null;
+  const [, fileAnchor, side, start, , end] = m;
+  const fileEl = document.getElementById(`diff-${fileAnchor}`);
+  const path = fileEl ? filePathFor(fileEl) ?? filePathFor(fileEl.querySelector('[data-file-path], [data-path], a[href^="#diff-"]')) : undefined;
+  let startLine = Number(start);
+  let endLine = end ? Number(end) : startLine;
+  if (endLine < startLine) [startLine, endLine] = [endLine, startLine];
+  return { path, fileAnchor, side: side === 'L' ? 'old' : 'new', startLine, endLine };
+}
+
 export function selectionLabel(s: CodeSelection): string {
   const lines = s.startLine ? ` · L${s.startLine}${s.endLine && s.endLine !== s.startLine ? `–${s.endLine}` : ''}` : '';
-  return `${s.path ?? 'Selected code'}${lines}`;
+  const name = s.path ?? (s.fileAnchor ? 'Selected lines' : 'Selected code');
+  return `${name}${lines}${s.side === 'old' ? ' (old)' : ''}`;
 }
 
 export function githubTheme(): 'light' | 'dark' {

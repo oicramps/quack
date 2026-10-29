@@ -6,6 +6,7 @@ import { log } from './log.ts';
 import { buildFollowUp, buildPrompt } from './prompt.ts';
 import { prDiff, resolvePr } from './pr.ts';
 import { findClone } from './repo.ts';
+import { resolveSelections } from './selection.ts';
 import { acquireLock, changedFiles, prepareWorktree, worktreePath } from './worktree.ts';
 
 export type Send = (message: CompanionMessage) => void;
@@ -75,9 +76,11 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
     await prepareWorktree(clone, dir, ctx.headSha);
     log(requestId, 'worktree ready', `+${Date.now() - started}ms`);
 
+    const selections = await resolveSelections(clone, ctx.baseSha, ctx.headSha, req.selections);
+
     let prompt: string;
     if (req.sessionId) {
-      prompt = buildFollowUp(req.selections, req.question);
+      prompt = buildFollowUp(selections, req.question);
     } else {
       const { diff, truncated } = await prDiff(clone, ctx.baseSha, ctx.headSha);
       prompt = buildPrompt({
@@ -90,7 +93,7 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
         headSha: ctx.headSha,
         diff,
         diffTruncated: truncated,
-        selections: req.selections,
+        selections,
         question: req.question,
       });
     }

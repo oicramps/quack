@@ -52,6 +52,14 @@ function validateSelection(s: unknown): CodeSelection {
     if (typeof sel.path !== 'string' || !isSafeRepoPath(sel.path)) fail('invalid selection path');
     out.path = sel.path;
   }
+  if (sel.fileAnchor !== undefined) {
+    if (typeof sel.fileAnchor !== 'string' || !/^[0-9a-f]{64}$/.test(sel.fileAnchor)) fail('invalid fileAnchor');
+    out.fileAnchor = sel.fileAnchor;
+  }
+  if (sel.side !== undefined) {
+    if (sel.side !== 'old' && sel.side !== 'new') fail('invalid side');
+    out.side = sel.side;
+  }
   for (const key of ['startLine', 'endLine'] as const) {
     const v = sel[key];
     if (v !== undefined) {

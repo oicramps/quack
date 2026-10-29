@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { githubTheme, parsePrUrl, readBaseRef, readDiffSelection, readPrTitle } from '../lib/github';
+import { githubTheme, parsePrUrl, readBaseRef, readDiffSelection, readHashSelection, readPrTitle } from '../lib/github';
 import type { RuntimeMessage, TabRequest } from '../lib/messages';
 import type { PageContext } from '../lib/page';
 
@@ -27,13 +27,14 @@ export default defineContentScript({
       const prChanged = pr?.number !== context.pr?.number || pr?.repo !== context.pr?.repo || pr?.owner !== context.pr?.owner;
       context = {
         pr: pr ? { ...pr, title: readPrTitle(), baseRef: readBaseRef() } : null,
-        lastSelection: prChanged ? null : context.lastSelection,
+        lastSelection: (pr && readHashSelection()) || (prChanged ? null : context.lastSelection),
         theme: githubTheme(),
       };
       publish();
     };
 
     readContext();
+    ctx.addEventListener(window, 'hashchange', readContext);
     ctx.addEventListener(window, 'wxt:locationchange', () => {
       readContext();
       // GitHub fills the title in after navigating.
@@ -61,7 +62,7 @@ export default defineContentScript({
         readContext();
         sendResponse(context);
       } else if (msg?.kind === 'get-selection') {
-        sendResponse(readDiffSelection() ?? context.lastSelection);
+        sendResponse(readDiffSelection() ?? readHashSelection() ?? context.lastSelection);
       }
       return false;
     };

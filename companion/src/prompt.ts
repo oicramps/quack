@@ -25,7 +25,7 @@ const RULES = [
 
 function describeSelection(s: CodeSelection): string {
   const where = s.path
-    ? `${s.path}${s.startLine ? ` lines ${s.startLine}${s.endLine && s.endLine !== s.startLine ? `-${s.endLine}` : ''}` : ''}`
+    ? `${s.path}${s.startLine ? ` lines ${s.startLine}${s.endLine && s.endLine !== s.startLine ? `-${s.endLine}` : ''}` : ''}${s.side === 'old' ? ' (base version, before this PR)' : ''}`
     : 'Selected code (file unknown)';
   return s.text ? `${where}:\n\`\`\`\n${s.text}\n\`\`\`` : where;
 }
