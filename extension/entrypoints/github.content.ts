@@ -43,12 +43,21 @@ export default defineContentScript({
       browser.runtime.sendMessage({ kind: 'ask-selection', selection } satisfies RuntimeMessage).catch(() => {});
     };
 
+    // Lines picked with the line numbers live in the URL hash. One already there
+    // when the page loaded is ignored: GitHub doesn't highlight it again.
+    let loadedHash: string | null = location.hash;
+    const pickedLines = () => {
+      if (location.hash === loadedHash) return null;
+      loadedHash = null;
+      return readHashSelection();
+    };
+
     const readContext = () => {
       const pr = parsePrUrl(location.href);
       const prChanged = pr?.number !== context.pr?.number || pr?.repo !== context.pr?.repo || pr?.owner !== context.pr?.owner;
       context = {
         pr: pr ? { ...pr, title: readPrTitle(), baseRef: readBaseRef() } : null,
-        lastSelection: (pr && readHashSelection()) || (prChanged ? null : context.lastSelection),
+        lastSelection: (pr && pickedLines()) || (prChanged ? null : context.lastSelection),
         theme: githubTheme(),
       };
       publish();
@@ -104,7 +113,7 @@ export default defineContentScript({
         const first = range.getClientRects()[0];
         if (first) return floating.showAbove(first.top, range.getBoundingClientRect().right);
       }
-      const hash = readHashSelection();
+      const hash = pickedLines();
       const box = openCommentBox(hash);
       if (box) {
         const r = box.getBoundingClientRect();
@@ -119,7 +128,7 @@ export default defineContentScript({
     };
 
     const floating = createFloatingButton(() => {
-      const hash = readHashSelection();
+      const hash = pickedLines();
       const box = openCommentBox(hash);
       askAbout(hasTextSelection() ? readDiffSelection() : (box && readCommentBoxSelection(box)) ?? hash);
       floating.hide();
@@ -157,6 +166,11 @@ export default defineContentScript({
       // GitHub fills the title in after navigating.
       ctx.setTimeout(readContext, 800);
     });
+    ctx.addEventListener(document, 'keydown', (e) => {
+      if (e.key !== 'Escape' || !location.hash) return;
+      loadedHash = location.hash;
+      schedulePlace();
+    });
     ctx.addEventListener(window, 'scroll', schedulePlace, { capture: true, passive: true });
     ctx.addEventListener(window, 'resize', schedulePlace);
 
@@ -182,7 +196,7 @@ export default defineContentScript({
         readContext();
         sendResponse(context);
       } else if (msg?.kind === 'get-selection') {
-        sendResponse(readDiffSelection() ?? readHashSelection() ?? context.lastSelection);
+        sendResponse(readDiffSelection() ?? pickedLines() ?? context.lastSelection);
       }
       return false;
     };
