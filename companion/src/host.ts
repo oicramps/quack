@@ -41,9 +41,16 @@ export function startHost(origin: string | undefined): void {
     statusCache.set(id, { at: Date.now(), status });
     return status;
   };
+  // A backend that was ready stays usable while it is re-checked in the
+  // background; if it has since broken, the agent run reports the error.
   const cachedStatus = async (id: BackendId): Promise<BackendStatus> => {
     const hit = statusCache.get(id);
-    return hit && Date.now() - hit.at < STATUS_TTL_MS && hit.status.state === 'ready' ? hit.status : refreshStatus(id);
+    if (hit?.status.state !== 'ready') return refreshStatus(id);
+    if (Date.now() - hit.at >= STATUS_TTL_MS) {
+      hit.at = Date.now();
+      refreshStatus(id).catch(() => {});
+    }
+    return hit.status;
   };
 
   const running = new Map<string, AbortController>();
