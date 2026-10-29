@@ -58,8 +58,8 @@ export function run(
   });
 }
 
-export function spawnStreaming(file: string, args: string[], cwd: string): ChildProcess {
-  return spawn(file, args, { cwd, env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+export function spawnStreaming(file: string, args: string[], cwd: string, opts: { stdin?: boolean } = {}): ChildProcess {
+  return spawn(file, args, { cwd, env: childEnv(), stdio: [opts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], detached: true });
 }
 
 /** Kills the child and anything it started (it runs in its own process group). */

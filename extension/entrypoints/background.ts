@@ -86,7 +86,7 @@ export default defineBackground(() => {
     port.onMessage.addListener((msg: ToBackground) => {
       if (msg.kind !== 'send') return;
       const message: ExtensionMessage = msg.message;
-      if (message.type !== 'cancel') owners.set(message.requestId, port);
+      if (message.type === 'status' || message.type === 'ask') owners.set(message.requestId, port);
       try {
         openNative().postMessage(message);
       } catch (err) {

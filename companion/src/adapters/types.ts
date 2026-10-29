@@ -21,6 +21,10 @@ export interface Adapter {
   label: string;
   isAvailable(): Promise<BackendStatus>;
   ask(opts: AskOpts): AsyncIterable<AdapterEvent>;
+  /** Stops the process kept open for a session, if any. */
+  closeSession?(sessionId: string): void;
+  /** Stops every process the adapter keeps open. */
+  shutdown?(): void;
 }
 
 /** Turns one parsed stream-json line into zero or more adapter events. */

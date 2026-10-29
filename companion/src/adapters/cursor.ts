@@ -1,6 +1,10 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import type { BackendStatus, FixStep } from '@quack/shared';
 import { findBinary, run } from '../exec.ts';
+import { log } from '../log.ts';
+import { QUACK_DIR } from '../paths.ts';
+import { type AcpModel, askAcp, closeAcpSession, closeAllAcpSessions, probeAcpModels } from './acp.ts';
 import { clip, relativeTo, runJsonLines, stripAnsi } from './stream.ts';
 import type { Adapter, AdapterEvent, AskOpts, LineParser } from './types.ts';
 
@@ -18,14 +22,18 @@ interface Capabilities {
   listModels: boolean;
   askMode: boolean;
   trust: boolean;
+  /** Can run as an ACP server, which keeps a session's process open between questions. */
+  acp: boolean;
 }
 
 async function capabilities(): Promise<Capabilities | null> {
   const bin = findBinary(['cursor-agent', 'agent']);
   if (!bin) return null;
-  const [version, help] = await Promise.all([
+  // `acp` is missing from the main help, so ask the subcommand itself.
+  const [version, help, acpHelp] = await Promise.all([
     run(bin, ['--version'], { timeoutMs: 15_000 }),
     run(bin, ['--help'], { timeoutMs: 15_000 }),
+    run(bin, ['acp', '--help'], { timeoutMs: 15_000 }),
   ]);
   const h = help.stdout + help.stderr;
   if (path.basename(bin) === 'agent' && !/cursor/i.test(h)) return null;
@@ -37,6 +45,7 @@ async function capabilities(): Promise<Capabilities | null> {
     listModels: h.includes('--list-models'),
     askMode: /--mode\b[\s\S]{0,200}\bask\b/.test(h),
     trust: h.includes('--trust'),
+    acp: /Agent Client Protocol/i.test(acpHelp.stdout + acpHelp.stderr),
   };
 }
 
@@ -60,7 +69,46 @@ export function parseModelList(out: string): string[] {
   return models;
 }
 
+const MODEL_CACHE = path.join(QUACK_DIR, 'cursor-models.json');
+const MODEL_CACHE_MS = 24 * 60 * 60_000;
+
+function readModelCache(): { at: number; ids: string[] } | null {
+  try {
+    const c = JSON.parse(fs.readFileSync(MODEL_CACHE, 'utf8'));
+    return typeof c.at === 'number' && Array.isArray(c.ids) ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberModels(models: AcpModel[]): void {
+  try {
+    fs.writeFileSync(MODEL_CACHE, JSON.stringify({ at: Date.now(), ids: models.map((m) => m.id) }));
+  } catch (err) {
+    log('could not cache Cursor models:', String(err));
+  }
+}
+
+/** ACP names models without the CLI's effort variants, e.g. `gpt-5.6-luna`. */
+async function acpModelIds(caps: Capabilities): Promise<string[]> {
+  const cached = readModelCache();
+  if (cached && Date.now() - cached.at < MODEL_CACHE_MS) return ['', ...cached.ids];
+  try {
+    const dir = path.join(QUACK_DIR, 'model-probe');
+    fs.mkdirSync(dir, { recursive: true });
+    const models = await probeAcpModels(caps.bin, dir);
+    if (models.length) {
+      rememberModels(models);
+      return ['', ...models.map((m) => m.id)];
+    }
+  } catch (err) {
+    log('could not list Cursor models over ACP:', (err as Error).message);
+  }
+  return cached ? ['', ...cached.ids] : FALLBACK_MODELS;
+}
+
 async function models(caps: Capabilities): Promise<string[]> {
+  if (caps.acp) return acpModelIds(caps);
   if (!caps.listModels) return FALLBACK_MODELS;
   const res = await run(caps.bin, ['--list-models'], { timeoutMs: 20_000 });
   const list = res.code === 0 ? parseModelList(res.stdout) : [];
@@ -151,7 +199,7 @@ export const cursorAdapter: Adapter = {
       return { id: 'cursor', label: 'Cursor', state: 'not_installed', models: [], fixSteps: [INSTALL, { text: 'Log in', command: 'cursor-agent login' }, RECHECK] };
     }
     const [isLoggedIn, list] = await Promise.all([loggedIn(caps), models(caps)]);
-    const hint = caps.partialOutput
+    const hint = caps.acp || caps.partialOutput
       ? undefined
       : `Cursor CLI ${caps.version} can't stream partial output or list models, so answers arrive in larger chunks. Update it with \`${caps.name} update\`.`;
     if (!isLoggedIn) {
@@ -174,6 +222,10 @@ export const cursorAdapter: Adapter = {
       yield { type: 'error', message: 'Cursor CLI not found.' };
       return;
     }
+    if (caps.acp) {
+      yield* askAcp(caps.bin, opts, rememberModels);
+      return;
+    }
     // No --force: without it the CLI does not apply file changes.
     const args = ['-p', '--output-format', 'stream-json'];
     if (caps.partialOutput) args.push('--stream-partial-output');
@@ -184,4 +236,7 @@ export const cursorAdapter: Adapter = {
     args.push(opts.prompt);
     yield* runJsonLines(caps.bin, args, opts.cwd, opts.signal, createCursorParser(opts.cwd), 'cursor');
   },
+
+  closeSession: closeAcpSession,
+  shutdown: closeAllAcpSessions,
 };

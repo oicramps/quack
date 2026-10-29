@@ -82,6 +82,12 @@ export function validateMessage(raw: unknown): ExtensionMessage {
     case 'status':
     case 'cancel':
       return { type: m.type, requestId: m.requestId };
+    case 'close_session': {
+      const c = raw as { backend?: unknown; sessionId?: unknown };
+      if (!BACKENDS.includes(c.backend as BackendId)) fail('unknown backend');
+      if (typeof c.sessionId !== 'string' || !SESSION.test(c.sessionId)) fail('invalid sessionId');
+      return { type: 'close_session', requestId: m.requestId, backend: c.backend as BackendId, sessionId: c.sessionId };
+    }
     case 'ask': {
       const a = raw as Partial<AskRequest>;
       if (!BACKENDS.includes(a.backend as BackendId)) fail('unknown backend');

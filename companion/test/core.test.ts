@@ -106,3 +106,13 @@ test('prompt contains the rules, diff, selection and question', () => {
   }
   assert.ok(!buildFollowUp([], '-v').startsWith('-'));
 });
+
+test('close_session messages are validated', () => {
+  assert.deepEqual(validateMessage({ type: 'close_session', requestId: 'r1', backend: 'cursor', sessionId: 'abc-1' }), {
+    type: 'close_session',
+    requestId: 'r1',
+    backend: 'cursor',
+    sessionId: 'abc-1',
+  });
+  assert.throws(() => validateMessage({ type: 'close_session', requestId: 'r1', backend: 'cursor', sessionId: '--rm' }), ValidationError);
+});

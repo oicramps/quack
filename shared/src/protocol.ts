@@ -77,7 +77,15 @@ export interface CancelRequest {
   requestId: string;
 }
 
-export type ExtensionMessage = StatusRequest | AskRequest | CancelRequest;
+/** The thread is over: the companion can stop the agent process kept open for it. No reply. */
+export interface CloseSessionRequest {
+  type: 'close_session';
+  requestId: string;
+  backend: BackendId;
+  sessionId: string;
+}
+
+export type ExtensionMessage = StatusRequest | AskRequest | CancelRequest | CloseSessionRequest;
 
 // Companion -> extension
 

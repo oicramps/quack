@@ -65,6 +65,9 @@ export function startHost(origin: string | undefined): void {
       case 'cancel':
         running.get(message.requestId)?.abort();
         break;
+      case 'close_session':
+        adapters[message.backend].closeSession?.(message.sessionId);
+        break;
       case 'ask': {
         const controller = new AbortController();
         running.set(message.requestId, controller);
@@ -100,6 +103,7 @@ export function startHost(origin: string | undefined): void {
   process.stdin.on('end', () => {
     log('port closed, stopping', running.size, 'request(s)');
     for (const c of running.values()) c.abort();
+    for (const adapter of Object.values(adapters)) adapter.shutdown?.();
     setTimeout(() => process.exit(0), 1500).unref();
   });
 }

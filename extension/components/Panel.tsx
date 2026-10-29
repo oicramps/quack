@@ -221,10 +221,19 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     setChips((prev) => (prev.some((c) => sameSelection(c, selection)) ? prev : [...prev, selection]));
   }
 
+  /** Starts a fresh thread and lets the companion stop the agent kept open for the old one. */
+  function resetThread(nextBackend: BackendId) {
+    const old = threadsRef.current[key];
+    if (old?.sessionId) {
+      client.send({ type: 'close_session', requestId: newRequestId(), backend: old.backend, sessionId: old.sessionId });
+    }
+    dispatch({ type: 'reset', key, backend: nextBackend });
+  }
+
   function selectBackend(id: BackendId) {
     if (id === backend) return;
     savePrefs({ ...prefs, backend: id });
-    if (key && thread?.turns.length) dispatch({ type: 'reset', key, backend: id });
+    if (key && thread?.turns.length) resetThread(id);
   }
 
   function selectModel(m: string) {
@@ -238,7 +247,7 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     const useModel = modelFor(useBackend);
     const current = threadsRef.current[key];
     const continuing = !!current && current.backend === useBackend && current.turns.length > 0;
-    if (current && current.backend !== useBackend) dispatch({ type: 'reset', key, backend: useBackend });
+    if (current && current.backend !== useBackend) resetThread(useBackend);
 
     const requestId = newRequestId();
     const turn: Turn = {
@@ -429,7 +438,7 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
               />
             ))}
             {thread?.turns.length && !running ? (
-              <button type="button" className="ghost new-thread" onClick={() => dispatch({ type: 'reset', key, backend })}>
+              <button type="button" className="ghost new-thread" onClick={() => resetThread(backend)}>
                 Start a new thread
               </button>
             ) : null}

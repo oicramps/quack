@@ -66,7 +66,7 @@ export async function* runJsonLines(
  * With QUACK_RECORD=1, raw agent output is saved to ~/.quack/recordings for
  * building parser fixtures. Off by default because it contains code.
  */
-function recorder(name: string): ((line: string) => void) | undefined {
+export function recorder(name: string): ((line: string) => void) | undefined {
   if (process.env.QUACK_RECORD !== '1') return undefined;
   const dir = path.join(QUACK_DIR, 'recordings');
   fs.mkdirSync(dir, { recursive: true });
@@ -74,7 +74,7 @@ function recorder(name: string): ((line: string) => void) | undefined {
   return (line) => fs.appendFileSync(file, line + '\n');
 }
 
-function stderrSummary(stderr: string): string {
+export function stderrSummary(stderr: string): string {
   return stderr
     .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
     .split('\n')
