@@ -1,0 +1,18 @@
+{
+  "name": "quack",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ask Claude Code or Cursor about a GitHub PR's code from the PR page, without checking it out.",
+  "workspaces": [
+    "shared",
+    "companion",
+    "extension"
+  ],
+  "scripts": {
+    "build": "npm run build -w companion && npm run build -w extension",
+    "dev": "npm run dev -w extension",
+    "install-host": "npm run install-host -w companion",
+    "test": "npm test -w companion",
+    "typecheck": "npm run typecheck -w companion && npm run typecheck -w extension"
+  }
+}

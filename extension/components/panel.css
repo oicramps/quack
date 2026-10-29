@@ -1,0 +1,325 @@
+/* Spike styling: just enough to dock, read and click. Final visuals come from the design files in MVP. */
+
+.quack {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #59636e;
+  --border: #d1d9e0;
+  --subtle: #f6f8fa;
+  --accent: #0969da;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --err: #d1242f;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  box-sizing: border-box;
+}
+.quack[data-theme='dark'] {
+  --bg: #0d1117;
+  --fg: #f0f6fc;
+  --muted: #9198a1;
+  --border: #3d444d;
+  --subtle: #151b23;
+  --accent: #4493f8;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --err: #f85149;
+}
+.quack *,
+.quack *::before,
+.quack *::after {
+  box-sizing: inherit;
+}
+
+.panel {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+.rail {
+  height: 100vh;
+  width: 36px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+  padding-top: 72px;
+}
+.rail-button {
+  width: 28px;
+  height: 28px;
+  font-weight: 600;
+}
+
+.pad {
+  padding: 8px 12px;
+}
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 12px;
+}
+
+button,
+select,
+input,
+textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+button {
+  padding: 3px 10px;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.link {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  color: var(--accent);
+}
+button.icon {
+  background: none;
+  border: none;
+  padding: 0 6px;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+code {
+  font: 12px/1.45 ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.header {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pr-title {
+  flex: 1;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sha {
+  color: var(--muted);
+}
+.pickers {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.pickers select,
+.model-input {
+  padding: 3px 6px;
+  max-width: 170px;
+}
+
+.picker {
+  position: relative;
+}
+.picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 340px;
+  z-index: 10;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+}
+.picker-item > button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+}
+.picker-item.selected > button {
+  background: var(--subtle);
+}
+.picker-item > button.disabled {
+  color: var(--muted);
+}
+.picker-fix,
+.picker-reason {
+  padding: 0 8px 8px 24px;
+}
+.picker-footer {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding: 6px 8px 2px;
+}
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.dot.ok {
+  background: var(--ok);
+}
+.dot.warn {
+  background: var(--warn);
+}
+
+.notice {
+  border-bottom: 1px solid var(--border);
+}
+.notice.warn,
+.hint {
+  color: var(--warn);
+}
+
+.thread {
+  flex: 1;
+  overflow-y: auto;
+}
+.turn {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.question {
+  background: var(--subtle);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+}
+.steps,
+.activity {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0;
+}
+.steps .current {
+  font-weight: 600;
+}
+.answer {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.answer-meta {
+  margin-top: 6px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.error {
+  margin-top: 6px;
+  border: 1px solid var(--err);
+  border-radius: 6px;
+  padding: 8px;
+}
+.error.quiet {
+  border-color: var(--border);
+}
+.error strong {
+  color: var(--err);
+}
+.error.quiet strong {
+  color: var(--muted);
+}
+.error p {
+  margin: 4px 0;
+}
+.row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.fix-steps {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.fix-steps li {
+  margin-bottom: 4px;
+}
+.command {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+}
+.command code {
+  flex: 1;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.composer {
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.composer > button.link {
+  align-self: flex-start;
+  text-align: left;
+}
+.chips {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip {
+  display: flex;
+  align-items: center;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0 0 0 8px;
+}
+textarea {
+  width: 100%;
+  resize: none;
+  padding: 6px 8px;
+}
+.composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

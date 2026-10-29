@@ -1,0 +1,27 @@
+{
+  "name": "@quack/companion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "quack-companion": "dist/quack-companion.cjs"
+  },
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/quack-companion.cjs",
+    "install-host": "npm run build && node dist/quack-companion.cjs install",
+    "uninstall-host": "node dist/quack-companion.cjs uninstall",
+    "prune": "node dist/quack-companion.cjs prune",
+    "doctor": "node dist/quack-companion.cjs doctor",
+    "harness": "npm run build && node scripts/harness.mjs",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@quack/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}
