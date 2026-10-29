@@ -57,11 +57,27 @@ export function startHost(origin: string | undefined): void {
 
   const handle = (message: ExtensionMessage) => {
     switch (message.type) {
-      case 'status':
-        Promise.all((Object.keys(adapters) as BackendId[]).map(refreshStatus)).then((backends) =>
-          send({ type: 'status', requestId: message.requestId, version: QUACK_VERSION, backends }),
-        );
+      case 'status': {
+        // Answer at once so the panel knows the companion is up, then again as each backend is checked.
+        const ids = Object.keys(adapters) as BackendId[];
+        const done = new Map<BackendId, BackendStatus>();
+        const report = () =>
+          send({
+            type: 'status',
+            requestId: message.requestId,
+            version: QUACK_VERSION,
+            backends: ids.flatMap((id) => done.get(id) ?? []),
+            pending: ids.filter((id) => !done.has(id)),
+          });
+        report();
+        for (const id of ids) {
+          refreshStatus(id).then((status) => {
+            done.set(id, status);
+            report();
+          });
+        }
         break;
+      }
       case 'cancel':
         running.get(message.requestId)?.abort();
         break;

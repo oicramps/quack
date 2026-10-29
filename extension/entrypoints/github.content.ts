@@ -13,6 +13,7 @@ import {
   readCommentBoxSelection,
   readDiffSelection,
   readHashSelection,
+  readPrStats,
   readPrTitle,
 } from '../lib/github';
 import type { RuntimeMessage, TabRequest } from '../lib/messages';
@@ -57,7 +58,7 @@ export default defineContentScript({
       const pr = parsePrUrl(location.href);
       const prChanged = pr?.number !== context.pr?.number || pr?.repo !== context.pr?.repo || pr?.owner !== context.pr?.owner;
       context = {
-        pr: pr ? { ...pr, title: readPrTitle(), baseRef: readBaseRef(), headRef: readHeadRef() } : null,
+        pr: pr ? { ...pr, title: readPrTitle(), baseRef: readBaseRef(), headRef: readHeadRef(), ...readPrStats() } : null,
         lastSelection: (pr && pickedLines()) || (prChanged ? null : context.lastSelection),
         theme: githubTheme(),
       };

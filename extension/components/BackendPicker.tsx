@@ -9,6 +9,10 @@ const STATE_LABEL: Record<BackendState, string> = {
   not_installed: 'Not installed',
 };
 
+export function backendLabel(id: BackendId): string {
+  return id === 'cursor' ? 'Cursor' : 'Claude Code';
+}
+
 export function StatusDot({ tone }: { tone: 'ok' | 'warn' | 'err' | 'idle' }) {
   return <span className={`dot ${tone}`} aria-hidden="true" />;
 }
@@ -117,7 +121,7 @@ export function BackendPicker({
     </>
   ) : (
     <>
-      <StatusDot tone={!current ? 'idle' : current.state === 'ready' ? 'ok' : 'warn'} /> {current?.label ?? 'Backend'}
+      <StatusDot tone={!current ? 'idle' : current.state === 'ready' ? 'ok' : 'warn'} /> {current?.label ?? backendLabel(selected)}
     </>
   );
 

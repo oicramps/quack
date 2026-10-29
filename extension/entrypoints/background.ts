@@ -66,7 +66,7 @@ export default defineBackground(() => {
       if (!owner) return;
       post(owner, { kind: 'companion', message: msg });
       const finished =
-        msg.type === 'status' || (msg.type === 'event' && (msg.event.type === 'done' || msg.event.type === 'error'));
+        (msg.type === 'status' && !msg.pending?.length) || (msg.type === 'event' && (msg.event.type === 'done' || msg.event.type === 'error'));
       if (finished) owners.delete(msg.requestId);
     });
     port.onDisconnect.addListener(() => {

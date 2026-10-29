@@ -37,14 +37,27 @@ Differences from the new plugin:
 - It only runs during \`expo prebuild\`, so it survives \`--clean\`.
 - It also turns on \`org.gradle.caching\`, which the config doesn't.
 
+| Property | Effect |
+|---|---|
+| \`android.enableMinifyInReleaseBuilds=true\` | Turns on \`minifyEnabled\` for release builds, so R8 shrinks the bytecode. |
+| \`org.gradle.caching=true\` | Gradle's build cache. Doesn't change the APK. |
+
 ### Suggestion
 
 Keep the plugin and drop the duplicate keys from the config:
 
-\`\`\`js mobile/app.config.ts
-android: {
-  enableProguardInReleaseBuilds: true,
-},
+\`\`\`js mobile/plugins/gradleProperties.js
+// Shared by every plugin that edits gradle.properties
+function setGradleProperty(props, key, value) {
+  const existing = props.find((item) => item.type === 'property' && item.key === key);
+  if (existing) {
+    existing.value = value;
+  } else {
+    props.push({ type: 'property', key, value: String(42) });
+  }
+}
+
+module.exports = { setGradleProperty };
 \`\`\`
 `;
 
@@ -67,6 +80,7 @@ const chunks = (text: string, from: number) =>
 
 const scripts: Record<string, Script> = {
   preparing: PREP.slice(0, 3),
+  thinking: [...PREP, progress('thinking', 1100)],
   streaming: [...PREP, ...TOOLS, ...chunks(ANSWER.slice(0, 260), 1600)],
   done: [...PREP, ...TOOLS, ...chunks(ANSWER, 1600), event({ type: 'done', sessionId: 's1', headSha: SHA, model: 'auto' }, 2400)],
   error: [
@@ -84,7 +98,11 @@ class FakeClient {
       return;
     }
     if (message.type === 'status') {
-      setTimeout(() => listener?.({ type: 'status', requestId: message.requestId, version: QUACK_VERSION, backends }), 10);
+      const reply = (list: BackendStatus[], pending: BackendStatus['id'][]) =>
+        listener?.({ type: 'status', requestId: message.requestId, version: QUACK_VERSION, backends: list, pending });
+      setTimeout(() => reply([], ['cursor', 'claude-code']), 10);
+      // "loading" stays on the companion's first, partial answer.
+      if (scenario !== 'loading') setTimeout(() => reply(backends, []), 20);
     } else if (message.type === 'ask') {
       for (const step of scripts[scenario] ?? []) {
         setTimeout(() => {
@@ -103,12 +121,35 @@ class FakeClient {
   }
 }
 
-seedStorage({ 'quack.prefs': { backend: scenario === 'not-installed' ? 'claude-code' : 'cursor', models: { cursor: 'auto' } } });
+seedStorage({
+  'quack.prefs': { backend: scenario === 'not-installed' ? 'claude-code' : 'cursor', models: { cursor: 'auto' } },
+  'quack.recent': [
+    { owner: 'ProjetoParcas', repo: 'mynah', number: 14, title: 'Local release APK build with release optimizations', questions: 2, at: Date.now() - 3_600_000 },
+    { owner: 'ProjetoParcas', repo: 'mynah', number: 11, title: 'Move settings page to the new form API', questions: 4, at: Date.now() - 26 * 3_600_000 },
+    { owner: 'ProjetoParcas', repo: 'api', number: 213, title: 'Fix flaky retry test in upload queue', questions: 1, at: Date.now() - 4 * 86_400_000 },
+  ],
+});
 
 const selection = { path: 'mobile/plugins/withReleaseOptimizations.js', startLine: 15, endLine: 30, side: 'new' as const };
+const noSelection = ['empty', 'loading'].includes(scenario);
 const page: PanelPage = {
-  pr: { owner: 'ProjetoParcas', repo: 'mynah', number: 14, title: 'Local release APK build with release optimizations', baseRef: 'main', headRef: 'cursor/local-release-apk' },
-  lastSelection: selection,
+  pr:
+    scenario === 'no-pr'
+      ? null
+      : {
+          owner: 'ProjetoParcas',
+          repo: 'mynah',
+          number: 14,
+          title: 'Local release APK build with release optimizations',
+          baseRef: 'main',
+          headRef: 'cursor/local-release-apk',
+          headSha: SHA,
+          commits: 3,
+          files: 2,
+          additions: 25,
+          deletions: 3,
+        },
+  lastSelection: noSelection ? null : selection,
   theme: document.body.dataset.theme as 'light' | 'dark',
   attachRequest: { seq: ['selection', 'preparing', 'streaming', 'done', 'error'].includes(scenario) ? 1 : 0, selection },
 };

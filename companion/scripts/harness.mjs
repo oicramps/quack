@@ -56,6 +56,7 @@ function finish(code = 0) {
 let answer = '';
 function onMessage(msg) {
   if (msg.type === 'status') {
+    if (msg.pending?.length) return;
     console.log(JSON.stringify(msg, null, 2));
     return finish();
   }

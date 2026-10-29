@@ -42,6 +42,7 @@ test('cursor acp: text chunks and one summary per tool call once its input is kn
   const map = createUpdateMapper('/wt');
   const events = [
     { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'hmm' } },
+    { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Let me search.' } },
     { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'grep', kind: 'search', status: 'pending', rawInput: {} },
     { sessionUpdate: 'tool_call_update', toolCallId: 't1', title: 'grep "parseDate"', rawInput: { pattern: 'parseDate', path: '/wt' } },
     { sessionUpdate: 'tool_call_update', toolCallId: 't1', status: 'completed' },
@@ -50,7 +51,7 @@ test('cursor acp: text chunks and one summary per tool call once its input is kn
     { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Yes: ' } },
     { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '`src/utils/date.ts:112`.' } },
   ].flatMap(map);
-  assert.equal(text(events), 'Yes: `src/utils/date.ts:112`.');
+  assert.equal(text(events), 'Let me search.\n\nYes: `src/utils/date.ts:112`.');
   assert.deepEqual(tools(events), ['Searched repo for parseDate', 'Read src/utils/date.ts']);
 });
 

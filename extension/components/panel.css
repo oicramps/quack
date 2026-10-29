@@ -267,22 +267,37 @@ button.pill {
 }
 .header {
   flex: none;
-  padding: 12px 16px;
   border-bottom: 1px solid var(--line-soft);
   display: flex;
   flex-direction: column;
-  gap: 12px;
   container: header / inline-size;
 }
 .title-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  height: 44px;
+  padding: 0 8px 0 14px;
   min-width: 0;
 }
 .title-row .logo {
   flex: none;
-  margin-right: 2px;
+}
+.wordmark {
+  flex: none;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.title-row .divider {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: var(--line);
+}
+button.collapse {
+  flex: none;
+  width: 28px;
+  height: 28px;
 }
 .pr-number {
   flex: none;
@@ -299,7 +314,9 @@ button.pill {
 }
 .sha {
   flex: none;
-  padding: 2px 6px;
+  height: 20px;
+  line-height: 20px;
+  padding: 0 6px;
   border-radius: 6px;
   background: var(--sub);
   color: var(--fg2);
@@ -308,16 +325,22 @@ button.pill {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px 4px;
 }
 .status {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+}
+.status .dot {
+  width: 6px;
+  height: 6px;
 }
 .status.ok {
   color: var(--ok);
@@ -373,16 +396,20 @@ button.pill {
   display: flex;
 }
 .picker-button {
-  height: 30px;
-  padding: 0 8px 0 10px;
+  height: 28px;
+  padding: 0 6px 0 8px;
   border: 1px solid var(--line);
   background: var(--btn);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 400;
   color: var(--fg);
   min-width: 0;
-  max-width: 190px;
+  max-width: 180px;
 }
-@container header (max-width: 420px) {
+.picker-row > .menu:first-child .picker-button {
+  font-weight: 600;
+}
+@container header (max-width: 360px) {
   .status-text {
     display: none;
   }
@@ -392,7 +419,7 @@ button.pill {
   text-overflow: ellipsis;
 }
 .picker-button .mono {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
 }
 .picker-button.open {
@@ -407,8 +434,8 @@ button.pill {
   position: absolute;
   z-index: 20;
   top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  left: 12px;
+  right: 12px;
   max-height: min(480px, calc(100vh - 120px));
   overflow-y: auto;
   background: var(--bg);
@@ -575,16 +602,14 @@ body[data-theme='dark'] .menu-popover {
 
 /* Intro and setup */
 
+.body.roomy {
+  padding: 20px 16px;
+  gap: 24px;
+}
 .intro {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 8px;
-}
-.intro h2.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .intro h2 {
   font-size: 16px;
@@ -594,28 +619,171 @@ body[data-theme='dark'] .menu-popover {
 .intro p.muted {
   font-size: 13px;
 }
-.facts {
-  margin: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px 12px;
+.pr-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   font-size: 12px;
-  color: var(--fg2);
 }
-.facts dd {
-  margin: 0;
-  color: var(--fg);
+.fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  max-width: 100%;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--sub);
+  color: var(--fg2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tip {
+.fact .add {
+  color: var(--ok);
+}
+.fact .del {
+  color: var(--err);
+}
+
+.list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.section-title {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--fg2);
+}
+.list-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.list-card.soft {
+  border-color: var(--line-soft);
+}
+.list-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+}
+.list-row:last-child {
+  border-bottom: 0;
+}
+button.list-row:hover {
+  background: var(--sub);
+}
+.list-row > svg {
+  flex: none;
+  color: var(--fg2);
+}
+.list-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.list-row-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lines-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.lines-tip > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fg2);
+}
+.lines-tip strong {
+  display: block;
+  margin-bottom: 2px;
+}
+.lines-tip kbd {
+  font-size: 12px;
+}
+.skel {
+  display: block;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--line-soft);
+}
+.skel.icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.body.start {
+  padding: 24px 20px;
+  gap: 24px;
+}
+.start-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.start-head h1 {
+  margin: 0 0 -8px;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+}
+a.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  border-radius: 6px;
+  font-weight: 600;
+  text-decoration: none;
+}
+a.button.primary {
+  background: var(--acc);
+  color: #ffffff;
+}
+a.button.primary:hover {
+  filter: brightness(1.08);
+}
+.start-status {
+  margin-top: auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px !important;
   font-size: 12px;
   color: var(--fg2);
+}
+.start-status .dot {
+  width: 6px;
+  height: 6px;
 }
 
 .setup-card,
@@ -939,7 +1107,116 @@ body[data-theme='dark'] .menu-popover {
 .code-block pre {
   margin: 0;
   padding: 10px 14px 12px;
+  /* The panel is narrow and macOS hides scrollbars, so wrap instead of scrolling. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.quack {
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-number: #0550ae;
+  --hl-comment: #6e7781;
+  --hl-title: #8250df;
+  --hl-type: #953800;
+}
+body[data-theme='dark'] .quack {
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-number: #79c0ff;
+  --hl-comment: #8b949e;
+  --hl-title: #d2a8ff;
+  --hl-type: #ffa657;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-meta .hljs-keyword,
+.hljs-doctag {
+  color: var(--hl-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-template-string,
+.hljs-meta .hljs-string {
+  color: var(--hl-string);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-property,
+.hljs-meta,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--hl-number);
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section,
+.hljs-name {
+  color: var(--hl-title);
+}
+.hljs-type,
+.hljs-built_in,
+.hljs-title.class_,
+.hljs-params,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--hl-type);
+}
+.hljs-params {
+  color: inherit;
+}
+.hljs-addition {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.hljs-deletion {
+  color: var(--err);
+  background: var(--err-bg);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
+
+.table-wrap {
   overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 19px;
+  overflow-wrap: normal;
+}
+.markdown th,
+.markdown td {
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.markdown th {
+  background: var(--sub);
+  font-weight: 600;
+}
+.markdown tr + tr td,
+.markdown tbody tr:first-child td {
+  border-top: 1px solid var(--line-soft);
+}
+.markdown td code {
+  overflow-wrap: anywhere;
 }
 .code-block pre code {
   padding: 0;
@@ -947,7 +1224,10 @@ body[data-theme='dark'] .menu-popover {
   font-size: 12.5px;
   line-height: 20px;
 }
-.caret {
+.markdown.streaming > :is(p, h3, h4, blockquote):last-child::after,
+.markdown.streaming > :is(ul, ol):last-child > li:last-child::after,
+.markdown.streaming:empty::after {
+  content: '';
   display: inline-block;
   width: 8px;
   height: 18px;

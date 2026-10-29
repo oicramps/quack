@@ -13,7 +13,7 @@ import { QUACK_VERSION } from '@quack/shared';
 import { type CompanionClient, newRequestId } from '../lib/client';
 import { prKey, selectionLabel } from '../lib/github';
 import type { PanelPage } from '../lib/page';
-import { BackendPicker, ModelPicker, StatusDot, modelLabel } from './BackendPicker';
+import { BackendPicker, ModelPicker, StatusDot, backendLabel, modelLabel } from './BackendPicker';
 import { CommandBlock, FixSteps } from './FixSteps';
 import {
   ArrowUp,
@@ -21,14 +21,18 @@ import {
   ChevronRight,
   Circle,
   Close,
+  CollapsePanel,
   ErrorCircle,
+  ExternalArrow,
   FileIcon,
+  Lines,
   Plus,
   QuackMark,
   Retry,
   Search,
   Spinner,
   StopSquare,
+  Summary,
   Terminal,
   Warning,
 } from './icons';
@@ -93,7 +97,20 @@ interface Prefs {
   recentModels?: Partial<Record<BackendId, string[]>>;
 }
 
+/** A PR the user asked about, listed on the panel's start screen. */
+interface RecentPr {
+  owner: string;
+  repo: string;
+  number: number;
+  title?: string;
+  questions: number;
+  at: number;
+}
+
 const PREFS_KEY = 'quack.prefs';
+const RECENT_KEY = 'quack.recent';
+const MAX_RECENT = 5;
+const REVIEW_REQUESTS_URL = 'https://github.com/pulls/review-requested';
 const INSTALL_COMMAND = 'cd ~/Documents/Dev/Projects/quack && npm run install-host';
 const SHORTCUT = /Mac/.test(navigator.platform) ? '⌘⇧K' : 'Ctrl+Shift+K';
 
@@ -119,14 +136,32 @@ function duration(ms: number): string {
   return `${Math.floor(s / 60)} min${s % 60 >= 1 ? ` ${Math.round(s % 60)} s` : ''}`;
 }
 
+function timeAgo(at: number, now = Date.now()): string {
+  const min = (now - at) / 60_000;
+  if (min < 1) return 'just now';
+  if (min < 60) return `${Math.round(min)} min ago`;
+  if (min < 24 * 60) return `${Math.round(min / 60)} h ago`;
+  const days = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days <= 1) return 'yesterday';
+  if (days < 7) return new Date(at).toLocaleDateString(undefined, { weekday: 'short' });
+  return new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+
 export function Panel({ page, client }: { page: PanelPage; client: CompanionClient }) {
   const pr = page.pr;
   const key = pr ? prKey(pr) : '';
 
   const [connection, setConnection] = useState<Connection>({ state: 'checking' });
   const [backends, setBackends] = useState<BackendStatus[]>([]);
+  /** Backends the companion is still checking. */
+  const [pendingBackends, setPendingBackends] = useState<BackendId[]>([]);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const [prefs, setPrefs] = useState<Prefs>({ backend: 'cursor', models: {} });
+  const [recent, setRecent] = useState<RecentPr[]>([]);
+  /** Asked before the backend was known to be ready; sent once it is. */
+  const [queued, setQueued] = useState(false);
   const [threads, dispatch] = useReducer(threadsReducer, {});
   const [chips, setChips] = useState<CodeSelection[]>([]);
   const [question, setQuestion] = useState('');
@@ -143,13 +178,32 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
   const modelFor = (id: BackendId) => prefs.models[id] ?? backends.find((b) => b.id === id)?.models[0] ?? '';
   const model = modelFor(backend);
   const offline = connection.state === 'disconnected';
+  const loading = !offline && !backendStatus && (connection.state === 'checking' || pendingBackends.includes(backend));
 
   useEffect(() => {
     browser.storage.local.get(PREFS_KEY).then((r) => {
       const saved = r[PREFS_KEY] as Prefs | undefined;
       if (saved?.backend) setPrefs(saved);
     });
+    browser.storage.local.get(RECENT_KEY).then((r) => setRecent((r[RECENT_KEY] as RecentPr[] | undefined) ?? []));
   }, []);
+
+  function recordQuestion(about: NonNullable<PanelPage['pr']>) {
+    setRecent((list) => {
+      const old = list.find((r) => prKey(r) === prKey(about));
+      const entry: RecentPr = {
+        owner: about.owner,
+        repo: about.repo,
+        number: about.number,
+        title: about.title ?? old?.title,
+        questions: (old?.questions ?? 0) + 1,
+        at: Date.now(),
+      };
+      const next = [entry, ...list.filter((r) => r !== old)].slice(0, MAX_RECENT);
+      browser.storage.local.set({ [RECENT_KEY]: next });
+      return next;
+    });
+  }
 
   const savePrefs = (next: Prefs) => {
     setPrefs(next);
@@ -162,9 +216,16 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     const requestId = newRequestId();
     client.send({ type: 'status', requestId }, (msg) => {
       if (msg.type !== 'status') return;
+      const pending = msg.pending ?? [];
       setConnection({ state: 'connected', version: msg.version });
-      setBackends(msg.backends);
-      setCheckedAt(Date.now());
+      setPendingBackends(pending);
+      // While a re-check is running, keep showing the previous result for backends not checked yet.
+      setBackends((prev) =>
+        pending.length
+          ? [...prev.map((b) => msg.backends.find((n) => n.id === b.id) ?? b), ...msg.backends.filter((n) => !prev.some((b) => b.id === n.id))]
+          : msg.backends,
+      );
+      if (!pending.length) setCheckedAt(Date.now());
     });
   }, [client]);
 
@@ -265,6 +326,7 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     };
     const turnKey = key;
     dispatch({ type: 'start', key: turnKey, turn });
+    recordQuestion(pr);
     setRunning({ requestId, turnId: turn.id });
     setQuestion('');
     setChips([]);
@@ -302,6 +364,17 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     );
   }
 
+  function submit() {
+    if (loading) setQueued(!!question.trim());
+    else ask();
+  }
+
+  useEffect(() => {
+    if (!queued || loading) return;
+    setQueued(false);
+    ask();
+  }, [queued, loading]);
+
   function stop() {
     if (!running) return;
     client.send({ type: 'cancel', requestId: running.requestId });
@@ -331,24 +404,20 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
   const repoLink: RepoLink | null = pr ? { owner: pr.owner, repo: pr.repo, sha: knownSha } : null;
 
   if (!pr) {
-    return (
-      <div className="quack panel">
-        <div className="body">
-          <section className="intro">
-            <h2 className="brand">
-              <QuackMark size={24} /> Quack
-            </h2>
-            <p className="muted">Open a pull request on github.com to ask about its code.</p>
-          </section>
-        </div>
-      </div>
-    );
+    const readiness: { tone: 'ok' | 'warn' | 'idle'; text: string } = offline
+      ? { tone: 'warn', text: 'Companion offline' }
+      : loading || !backendStatus
+        ? { tone: 'idle', text: 'Checking…' }
+        : backendStatus.state === 'ready'
+          ? { tone: 'ok', text: `${backendStatus.label} · ${modelLabel(backend, model)} is ready` }
+          : { tone: 'warn', text: `${backendStatus.label} ${backendStatus.state === 'not_installed' ? 'isn’t installed' : 'isn’t logged in'}` };
+    return <NoPullRequest recent={recent} readiness={readiness} />;
   }
 
   const status: { tone: 'ok' | 'warn' | 'err' | 'idle' | 'busy'; text: string } = offline
     ? { tone: 'warn', text: 'Companion offline' }
-    : connection.state === 'checking'
-      ? { tone: 'idle', text: 'Connecting…' }
+    : loading
+      ? { tone: 'idle', text: 'Checking…' }
       : running
         ? { tone: 'busy', text: 'Working…' }
         : lastTurn?.status === 'error' && lastTurn.error?.code !== 'cancelled'
@@ -359,10 +428,15 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
 
   const versionMismatch = connection.state === 'connected' && connection.version !== QUACK_VERSION;
   const canAttach = page.lastSelection && !chips.some((c) => sameSelection(c, page.lastSelection!));
-  const canAsk = !!question.trim() && backendStatus?.state === 'ready' && !running;
+  const canAsk = !!question.trim() && (loading || backendStatus?.state === 'ready') && !running;
+  const empty = !thread?.turns.length;
   const hint = backendMenuOpen
     ? 'Switching backend starts a new thread'
-    : running
+    : queued
+      ? `Sends once ${backendLabel(backend)} is ready`
+      : loading
+        ? 'Type now — it sends once a backend is ready'
+        : running
       ? lastTurn && !lastTurn.text && !lastTurn.activity.length
         ? 'Esc cancels'
         : 'You can type while it answers'
@@ -375,11 +449,26 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
       <header className="header">
         <div className="title-row">
           <QuackMark size={16} className="logo" />
+          <span className="wordmark">Quack</span>
+          <span className="divider" aria-hidden="true" />
           <span className="pr-number">#{pr.number}</span>
           <span className="pr-title" title={pr.title}>
             {pr.title ?? ''}
           </span>
-          {knownSha && <code className="sha">{shortSha(knownSha)}</code>}
+          {knownSha && (
+            <code className="sha" title="Head commit the assistant reads">
+              {shortSha(knownSha)}
+            </code>
+          )}
+          <button
+            type="button"
+            className="ghost icon-only collapse"
+            aria-label="Collapse panel"
+            title={running ? 'Collapse panel (stops the current answer)' : `Collapse panel · reopen with ${SHORTCUT}`}
+            onClick={() => window.close()}
+          >
+            <CollapsePanel size={16} />
+          </button>
         </div>
         <div className="picker-row">
           <BackendPicker
@@ -413,13 +502,23 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
         </Banner>
       )}
 
-      <main className="body" aria-live="polite">
+      <main className={`body ${empty ? 'roomy' : ''}`} aria-live="polite" aria-busy={loading}>
         {offline ? (
           <CompanionOffline error={connection.error} onRetry={checkStatus} />
         ) : (
           <>
-            {!thread?.turns.length && connection.state === 'connected' && (
-              <Intro pr={pr} sha={knownSha} hasChips={chips.length > 0} />
+            {empty && <Intro pr={pr} sha={knownSha} hasChips={chips.length > 0} />}
+            {empty && loading && (
+              <>
+                <Readiness connection={connection} backend={backend} pending={pendingBackends} />
+                <SuggestionsSkeleton />
+              </>
+            )}
+            {empty && !chips.length && backendStatus?.state === 'ready' && (
+              <>
+                <Suggestions onPick={(q) => ask(q, [])} />
+                <LinesTip />
+              </>
             )}
             {backendStatus && backendStatus.state !== 'ready' && !lastTurn?.error?.fixSteps && (
               <BackendSetup status={backendStatus} onRecheck={checkStatus} />
@@ -490,10 +589,9 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    ask();
+                    submit();
                   }
                 }}
-                disabled={connection.state !== 'connected'}
                 aria-label="Question"
               />
               <div className="input-foot">
@@ -503,7 +601,12 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
                     <StopSquare /> Stop <kbd>Esc</kbd>
                   </button>
                 ) : (
-                  <button type="button" className={question.trim() ? 'primary' : 'secondary'} onClick={() => ask()} disabled={!canAsk}>
+                  <button
+                    type="button"
+                    className={question.trim() && !queued ? 'primary' : 'secondary'}
+                    onClick={submit}
+                    disabled={!canAsk || queued}
+                  >
                     Ask <ArrowUp size={14} />
                   </button>
                 )}
@@ -525,7 +628,53 @@ function Banner({ children }: { children: ReactNode }) {
   );
 }
 
+function NoPullRequest({ recent, readiness }: { recent: RecentPr[]; readiness: { tone: 'ok' | 'warn' | 'idle'; text: string } }) {
+  return (
+    <div className="quack panel">
+      <div className="body start">
+        <section className="start-head">
+          <QuackMark size={40} />
+          <h1>Open a pull request to start</h1>
+          <p className="muted">Quack answers questions about a pull request’s code.</p>
+        </section>
+        <a className="button primary block" href={REVIEW_REQUESTS_URL} target="_blank" rel="noreferrer">
+          Open my review requests <ExternalArrow size={14} />
+        </a>
+        {recent.length > 0 && (
+          <section className="list-section" aria-labelledby="recent-h">
+            <h2 id="recent-h" className="section-title">
+              Recent
+            </h2>
+            <div className="list-card">
+              {recent.map((r) => (
+                <button
+                  key={prKey(r)}
+                  type="button"
+                  className="list-row"
+                  onClick={() => browser.tabs.update({ url: `https://github.com/${r.owner}/${r.repo}/pull/${r.number}/files` })}
+                >
+                  <span className="list-row-text">
+                    <span className="list-row-title">{r.title ?? `Pull request #${r.number}`}</span>
+                    <span className="muted small">
+                      {r.owner}/{r.repo} #{r.number} · {plural(r.questions, 'question')} · {timeAgo(r.at)}
+                    </span>
+                  </span>
+                  <ChevronRight size={14} />
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+        <div className="start-status" role="status">
+          <StatusDot tone={readiness.tone} /> {readiness.text}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Intro({ pr, sha, hasChips }: { pr: NonNullable<PanelPage['pr']>; sha?: string; hasChips: boolean }) {
+  const hasFacts = pr.headRef || pr.baseRef || pr.commits !== undefined || pr.files !== undefined;
   return (
     <section className="intro">
       <h2>Ask about this pull request</h2>
@@ -535,30 +684,113 @@ function Intro({ pr, sha, hasChips }: { pr: NonNullable<PanelPage['pr']>; sha?: 
           posted until you choose to.
         </p>
       ) : (
-        <>
-          {(pr.headRef || pr.baseRef || sha) && (
-            <dl className="facts">
-              {(pr.headRef || pr.baseRef) && (
-                <>
-                  <dt>Branch</dt>
-                  <dd className="mono">
-                    {pr.headRef ?? '…'} → {pr.baseRef ?? '…'}
-                  </dd>
-                </>
-              )}
-              {sha && (
-                <>
-                  <dt>Commit</dt>
-                  <dd className="mono">{shortSha(sha)}</dd>
-                </>
-              )}
-            </dl>
-          )}
-          <p className="tip">
-            <FileIcon size={14} /> Select lines in the diff to ask about specific code <kbd>{SHORTCUT}</kbd>
-          </p>
-        </>
+        hasFacts && (
+          <div className="pr-facts">
+            {(pr.headRef || pr.baseRef) && (
+              <span className="fact mono">
+                {pr.headRef ?? '…'} → {pr.baseRef ?? '…'}
+              </span>
+            )}
+            {pr.commits !== undefined && <span className="fact">{plural(pr.commits, 'commit')}</span>}
+            {pr.files !== undefined && (
+              <span className="fact">
+                {plural(pr.files, 'file')}
+                {pr.additions !== undefined && (
+                  <>
+                    {' · '}
+                    <b className="add">+{pr.additions}</b> <b className="del">−{pr.deletions ?? 0}</b>
+                  </>
+                )}
+              </span>
+            )}
+          </div>
+        )
       )}
+    </section>
+  );
+}
+
+function Readiness({ connection, backend, pending }: { connection: Connection; backend: BackendId; pending: BackendId[] }) {
+  const connected = connection.state === 'connected';
+  const othersDone = connected && !pending.some((id) => id !== backend);
+  const steps: { state: 'done' | 'current' | 'waiting'; label: string; meta: string }[] = [
+    connected
+      ? { state: 'done', label: 'Companion connected', meta: `v${connection.version}` }
+      : { state: 'current', label: 'Connecting to the companion', meta: '' },
+    { state: connected ? 'current' : 'waiting', label: `Checking ${backendLabel(backend)}`, meta: 'Last used' },
+    { state: othersDone ? 'done' : 'waiting', label: 'Other backends', meta: othersDone ? 'Done' : 'Waiting' },
+  ];
+  return (
+    <section className="prep-card" role="status" aria-labelledby="ready-h">
+      <div className="prep-head">
+        <strong id="ready-h">Getting Quack ready</strong>
+        <span className="muted small">Usually a few seconds</span>
+      </div>
+      <ol className="prep-steps">
+        {steps.map((s) => (
+          <li key={s.label} className={s.state}>
+            <span className="prep-icon">
+              {s.state === 'done' ? <Check size={12} /> : s.state === 'current' ? <Spinner size={16} /> : <Circle size={14} />}
+            </span>
+            <span className="prep-label">{s.label}</span>
+            <span className="muted small prep-state">{s.meta}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+const SUGGESTIONS = [
+  { icon: <Summary size={16} />, text: 'Summarize what this PR changes and why' },
+  { icon: <Search size={16} />, text: 'Does this duplicate anything we already have?' },
+  { icon: <Warning size={16} />, text: 'What could break?' },
+];
+
+function Suggestions({ onPick }: { onPick: (question: string) => void }) {
+  return (
+    <section className="list-section" aria-labelledby="start-h">
+      <h3 id="start-h" className="section-title">
+        Start with
+      </h3>
+      <div className="list-card">
+        {SUGGESTIONS.map((s) => (
+          <button key={s.text} type="button" className="list-row" onClick={() => onPick(s.text)}>
+            {s.icon}
+            <span className="list-row-text">{s.text}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SuggestionsSkeleton() {
+  return (
+    <section className="list-section" aria-hidden="true">
+      <span className="skel" style={{ width: 72 }} />
+      <div className="list-card soft">
+        {[70, 82, 40].map((w) => (
+          <div key={w} className="list-row">
+            <span className="skel icon" />
+            <span className="skel" style={{ width: `${w}%` }} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LinesTip() {
+  return (
+    <section className="lines-tip">
+      <Lines size={16} />
+      <div>
+        <strong>Ask about specific lines</strong>
+        <p className="muted">
+          Select lines in the diff, then press <kbd>{SHORTCUT}</kbd> or click <b>Ask AI</b>.
+        </p>
+      </div>
     </section>
   );
 }
@@ -619,10 +851,6 @@ function CompanionOffline({ error, onRetry }: { error: string; onRetry: () => vo
 }
 
 const STEP_ORDER: ProgressStep[] = ['finding_repo', 'fetching_pr', 'preparing_worktree', 'starting_agent'];
-
-function backendLabel(id: BackendId): string {
-  return id === 'cursor' ? 'Cursor' : 'Claude Code';
-}
 
 function PrepCard({ turn, pr, onCancel }: { turn: Turn; pr: NonNullable<PanelPage['pr']>; onCancel: () => void }) {
   const current = turn.steps.at(-1)?.step ?? 'finding_repo';
@@ -750,7 +978,8 @@ function TurnView({
   const [activityOpen, setActivityOpen] = useState(false);
   const isRunning = turn.status === 'running';
   const now = useNow(isRunning);
-  const preparing = isRunning && !turn.text && !turn.activity.length;
+  const silent = isRunning && !turn.text && !turn.activity.length;
+  const preparing = silent && turn.steps.at(-1)?.step !== 'thinking';
   const elapsed = duration((turn.finishedAt ?? now) - turn.startedAt);
   const label = backendLabel(turn.backend);
   const error = turn.error;
@@ -759,7 +988,7 @@ function TurnView({
 
   const meta = isRunning ? (
     <>
-      <Spinner size={14} /> {preparing ? 'Resuming the conversation' : 'Answering'} · {elapsed}
+      <Spinner size={14} /> {preparing ? 'Resuming the conversation' : silent ? 'Thinking' : 'Answering'} · {elapsed}
     </>
   ) : turn.status === 'done' ? (
     <>

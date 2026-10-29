@@ -104,6 +104,28 @@ export const Close = (p: P) => (
     <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
   </Icon>
 );
+export const CollapsePanel = (p: P) => (
+  <Icon {...p}>
+    <rect x="2" y="2.5" width="12" height="11" rx="2" />
+    <path d="M10 2.5v11M5.5 6.5L7 8l-1.5 1.5" />
+  </Icon>
+);
+export const Summary = (p: P) => (
+  <Icon {...p}>
+    <path d="M3 3.5h10M3 7h10M3 10.5h6" />
+  </Icon>
+);
+export const Lines = (p: P) => (
+  <Icon {...p}>
+    <path d="M2.5 4h11M2.5 8h7M2.5 12h9" />
+  </Icon>
+);
+export const ExternalArrow = (p: P) => (
+  <Icon {...p}>
+    <path d="M6 3.5h6.5V10M12.5 3.5L4 12" />
+  </Icon>
+);
+
 // The Quack logo: a yellow duck in braces. `size` is the height; the mark is 3:2.
 export const QuackMark = ({ size = 16, className }: P) => (
   <svg role="img" aria-label="Quack" width={size * 1.5} height={size} viewBox="0 0 36 24" className={className}>

@@ -2,7 +2,8 @@ export type BackendId = 'cursor' | 'claude-code';
 
 export type BackendState = 'ready' | 'not_logged_in' | 'not_installed';
 
-export type ProgressStep = 'finding_repo' | 'fetching_pr' | 'preparing_worktree' | 'starting_agent';
+/** `thinking`: the agent is running and working on the answer, before any output. */
+export type ProgressStep = 'finding_repo' | 'fetching_pr' | 'preparing_worktree' | 'starting_agent' | 'thinking';
 
 export type ErrorCode =
   | 'bad_request'
@@ -99,7 +100,10 @@ export interface StatusResponse {
   type: 'status';
   requestId: string;
   version: string;
+  /** The backends checked so far. */
   backends: BackendStatus[];
+  /** Backends still being checked. A further status message follows until this is empty or absent. */
+  pending?: BackendId[];
 }
 
 export interface ProgressMessage {
@@ -122,4 +126,5 @@ export const PROGRESS_LABELS: Record<ProgressStep, string> = {
   fetching_pr: 'Fetching PR',
   preparing_worktree: 'Preparing worktree',
   starting_agent: 'Starting agent',
+  thinking: 'Thinking',
 };

@@ -16,4 +16,9 @@ export const browser = {
       },
     },
   },
+  tabs: {
+    async update(props: { url?: string }) {
+      console.log('navigate to', props.url);
+    },
+  },
 };

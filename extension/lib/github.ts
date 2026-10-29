@@ -1,4 +1,5 @@
 import type { CodeSelection, PrRef } from '@quack/shared';
+import type { PrStats } from './page';
 
 /** Reads owner, repo, PR number and, when the URL pins one, the viewed head commit. */
 export function parsePrUrl(url: string): PrRef | null {
@@ -29,6 +30,33 @@ export function readHeadRef(): string | undefined {
 function readRef(selector: string): string | undefined {
   const text = document.querySelector(selector)?.textContent?.trim().replace(/^[^:]+:/, '');
   return text && /^[A-Za-z0-9._\/-]+$/.test(text) ? text : undefined;
+}
+
+const toCount = (text: string | null | undefined) => {
+  const n = Number(text?.replace(/[^\d]/g, ''));
+  return text && /\d/.test(text) && Number.isFinite(n) ? n : undefined;
+};
+
+/** Reads the tab counter after a PR tab link ("Commits 3"), in either of GitHub's page UIs. */
+function tabCount(counterId: string, tab: 'commits' | 'files' | 'changes'): number | undefined {
+  const counter = document.getElementById(counterId);
+  if (counter) return toCount(counter.getAttribute('title') ?? counter.textContent);
+  for (const link of document.querySelectorAll<HTMLAnchorElement>(`a[href*="/pull/"][href$="/${tab}"]`)) {
+    const label = link.querySelector('[data-component="CounterLabel"], .Counter');
+    const n = toCount(label?.getAttribute('title') ?? label?.textContent);
+    if (n !== undefined) return n;
+  }
+  return undefined;
+}
+
+export function readPrStats(): PrStats {
+  const diffstat = document.getElementById('diffstat');
+  return {
+    commits: tabCount('commits_tab_counter', 'commits'),
+    files: tabCount('files_tab_counter', 'files') ?? tabCount('files_tab_counter', 'changes'),
+    additions: toCount(diffstat?.querySelector('.color-fg-success, .fgColor-success')?.textContent),
+    deletions: toCount(diffstat?.querySelector('.color-fg-danger, .fgColor-danger')?.textContent),
+  };
 }
 
 export function prKey(pr: Pick<PrRef, 'owner' | 'repo' | 'number'>): string {

@@ -150,14 +150,22 @@ function summarizeTool(t: ToolCall, cwd: string): string {
 /** Tool calls arrive as a `tool_call` plus updates; each is summarized once, as soon as its input is known. */
 export function createUpdateMapper(cwd: string): (update: Json) => AdapterEvent[] {
   const tools = new Map<string, ToolCall>();
+  let wroteText = false;
+  let toolSinceText = false;
   return (u) => {
     switch (u.sessionUpdate) {
       case 'agent_message_chunk': {
         const c = u.content as { type?: string; text?: string } | undefined;
-        return c?.type === 'text' && c.text ? [{ type: 'text', delta: c.text }] : [];
+        if (c?.type !== 'text' || !c.text) return [];
+        // Each message between tool calls is its own paragraph; the chunks don't say so.
+        const delta = toolSinceText && wroteText ? `\n\n${c.text.replace(/^\n+/, '')}` : c.text;
+        wroteText = true;
+        toolSinceText = false;
+        return [{ type: 'text', delta }];
       }
       case 'tool_call':
       case 'tool_call_update': {
+        toolSinceText = true;
         const id = String(u.toolCallId);
         const t = tools.get(id) ?? {};
         if (typeof u.kind === 'string') t.kind = u.kind;

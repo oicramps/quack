@@ -115,6 +115,7 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
       if (firstEvent) {
         firstEvent = false;
         log(requestId, 'first agent event', `+${Date.now() - started}ms`);
+        progress('thinking');
       }
       switch (ev.type) {
         case 'session':
