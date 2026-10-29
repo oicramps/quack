@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Browser } from 'wxt/browser';
 import { browser } from 'wxt/browser';
-import type { CodeSelection } from '@quack/shared';
+import type { CodeSelection, PrRef } from '@quack/shared';
 import { Panel } from '../../components/Panel';
 import { CompanionClient } from '../../lib/client';
 import { parsePrUrl } from '../../lib/github';
 import type { RuntimeMessage, TabRequest } from '../../lib/messages';
 import type { PageContext, PanelPage } from '../../lib/page';
+
+const samePr = (a: PrRef | null, b: PrRef | null) =>
+  !!a && !!b && a.owner === b.owner && a.repo === b.repo && a.number === b.number;
 
 const systemTheme = (): 'light' | 'dark' => (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 
@@ -19,6 +22,8 @@ export function App() {
   const [attachRequest, setAttachRequest] = useState<{ seq: number; selection: CodeSelection | null }>({ seq: 0, selection: null });
   const tabIdRef = useRef<number | null>(null);
   tabIdRef.current = tabId;
+  const contextRef = useRef(context);
+  contextRef.current = context;
 
   const attach = (selection: CodeSelection | null) => setAttachRequest((r) => ({ seq: r.seq + 1, selection }));
 
@@ -31,7 +36,11 @@ export function App() {
       setNotice(undefined);
       return;
     }
-    setContext((c) => ({ pr, lastSelection: c.pr?.number === pr.number ? c.lastSelection : null, theme: c.theme }));
+    // Same PR (e.g. only the #hash changed as lines were picked): keep showing
+    // what we have instead of flashing a title-less header while the page answers.
+    if (!samePr(contextRef.current.pr, pr) || tab.id !== tabIdRef.current) {
+      setContext((c) => ({ pr, lastSelection: null, theme: c.theme }));
+    }
     try {
       const fromPage = (await browser.tabs.sendMessage(tab.id, { kind: 'get-context' } satisfies TabRequest)) as PageContext | undefined;
       if (fromPage && tabIdRef.current === tab.id) setContext(fromPage);
@@ -57,7 +66,10 @@ export function App() {
 
     const onActivated = () => loadActiveTab();
     const onUpdated = (id: number, info: Browser.tabs.OnUpdatedInfo, tab: Browser.tabs.Tab) => {
-      if (id === tabIdRef.current && (info.url || info.status === 'complete')) loadTab(tab);
+      if (id !== tabIdRef.current || !(info.url || info.status === 'complete')) return;
+      // Picking lines changes only the #hash; the content script reports that itself.
+      if (info.url && !info.status && samePr(contextRef.current.pr, parsePrUrl(info.url))) return;
+      loadTab(tab);
     };
     const onMessage = (msg: RuntimeMessage, sender: Browser.runtime.MessageSender) => {
       if (msg.kind === 'page-context' && sender.tab?.id === tabIdRef.current) {
