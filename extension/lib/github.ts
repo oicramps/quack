@@ -60,7 +60,7 @@ function filePathFor(el: Element | null): string | undefined {
   return undefined;
 }
 
-function lineNumberFor(el: Element | null): number | undefined {
+export function lineNumberFor(el: Element | null): number | undefined {
   const row = el?.closest('tr, [role="row"]');
   if (!row) return undefined;
   const numbers: { n: number; side: string | null }[] = [];
@@ -133,27 +133,40 @@ function fileAnchorFor(el: Element): string | undefined {
   return undefined;
 }
 
-/** "Add a comment on lines R15 to R30" / "Add a comment on line L7" in GitHub's inline comment box. */
-export const COMMENT_HEADER = /^Add a comment on lines? ([LR])(\d+)(?: to ([LR])(\d+))?$/;
+/** "Add a comment on lines R15 to R30" / "Add a comment on line L7", the title of GitHub's inline comment box. */
+const COMMENT_TITLE = /Add a comment on lines? ([LR])(\d+)(?: to ([LR])(\d+))?/;
 
-export function readCommentBoxSelection(header: Element): CodeSelection | null {
-  const m = header.textContent?.trim().match(COMMENT_HEADER);
-  const fileAnchor = fileAnchorFor(header);
+/**
+ * GitHub's inline comment box around `textarea`: the smallest ancestor that
+ * also holds the "Add a comment on lines …" title.
+ */
+export function commentBoxFor(textarea: HTMLTextAreaElement): Element | null {
+  for (let el = textarea.parentElement, depth = 0; el && depth < 12; el = el.parentElement, depth++) {
+    const text = el.textContent ?? '';
+    if (text.length > 5000) return null;
+    if (COMMENT_TITLE.test(text)) return el;
+  }
+  return null;
+}
+
+export function readCommentBoxSelection(box: Element): CodeSelection | null {
+  const m = box.textContent?.match(COMMENT_TITLE);
+  const fileAnchor = fileAnchorFor(box) ?? readHashSelection()?.fileAnchor;
   if (!m || !fileAnchor) return null;
   const [, side, start, , end] = m;
   return lineSelection(fileAnchor, side, Number(start), end ? Number(end) : Number(start));
 }
 
-/** The element showing a selection's last line number, to place the in-page button next to. */
-export function lineElementFor(s: CodeSelection): Element | null {
-  if (!s.fileAnchor || !s.endLine) return null;
+/** The element showing one of a selection's line numbers, used to place the in-page button. */
+export function lineElementFor(s: CodeSelection, line: number): Element | null {
+  if (!s.fileAnchor) return null;
   const letter = s.side === 'old' ? 'L' : 'R';
-  const id = `diff-${s.fileAnchor}${letter}${s.endLine}`;
+  const id = `diff-${s.fileAnchor}${letter}${line}`;
   const direct = document.getElementById(id) ?? document.querySelector(`[data-line-anchor="${id}"]`);
   if (direct) return direct;
   const fileEl = document.getElementById(`diff-${s.fileAnchor}`);
   if (!fileEl) return null;
-  const n = String(s.endLine);
+  const n = String(line);
   const sideAttr = s.side === 'old' ? 'left' : 'right';
   const numbered = [...fileEl.querySelectorAll(`[data-line-number="${n}"]`)];
   const exact = numbered.find((el) => el.getAttribute('data-diff-side') === sideAttr);
@@ -166,6 +179,7 @@ export function lineElementFor(s: CodeSelection): Element | null {
           el.childElementCount === 0 &&
           el.textContent?.trim() === n &&
           el.closest('tr, [role="row"]') &&
+          el.getClientRects().length > 0 &&
           !el.closest('code, pre, [class*="diff-text"], [class*="blob-code"]'),
       );
   if (!cells.length) return null;

@@ -1,11 +1,12 @@
 import type { CodeSelection } from '@quack/shared';
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { createCommentBoxButton, createFloatingButton } from '../lib/askButton';
+import { createFloatingButton } from '../lib/askButton';
 import {
-  COMMENT_HEADER,
+  commentBoxFor,
   githubTheme,
   lineElementFor,
+  lineNumberFor,
   parsePrUrl,
   readBaseRef,
   readCommentBoxSelection,
@@ -17,7 +18,7 @@ import type { RuntimeMessage, TabRequest } from '../lib/messages';
 import type { PageContext } from '../lib/page';
 
 // Reports the PR, the latest diff selection and the theme to the side panel,
-// and shows "Ask AI" buttons next to selected lines and in GitHub's comment box.
+// and shows a floating "Ask AI" button above the selected lines.
 // The panel itself lives in Chrome's side panel, not in the page.
 export default defineContentScript({
   // All of github.com, because GitHub navigates to PRs without a page load.
@@ -54,38 +55,76 @@ export default defineContentScript({
       schedulePlace();
     };
 
-    // Floating button: after a text selection in the diff, otherwise next to
-    // the lines picked with the line numbers (kept in the URL hash).
+    // Floating button, placed above (in order of preference) a text selection
+    // in the diff, GitHub's open comment box, or the first of the lines picked
+    // with the line numbers (kept in the URL hash).
     let textSelection: CodeSelection | null = null;
-    const floating = createFloatingButton(() => {
-      askAbout(textSelection && !window.getSelection()?.isCollapsed ? readDiffSelection() : readHashSelection());
-      floating.hide();
-    });
-    ctx.onInvalidated(() => floating.remove());
+    let commentBoxes: Element[] = [];
 
-    const sameLines = (a: CodeSelection, b: CodeSelection | null) =>
-      !!b && a.fileAnchor === b.fileAnchor && a.side === b.side && a.startLine === b.startLine && a.endLine === b.endLine;
+    const sameLines = (a: CodeSelection | null, b: CodeSelection | null) =>
+      !!a && !!b && a.fileAnchor === b.fileAnchor && a.side === b.side && a.startLine === b.startLine && a.endLine === b.endLine;
+
+    const visible = (el: Element) => el.isConnected && el.getClientRects().length > 0;
+
+    const openCommentBox = (hash: CodeSelection | null): Element | undefined => {
+      const open = commentBoxes.filter(visible);
+      return open.find((box) => sameLines(readCommentBoxSelection(box), hash)) ?? open[open.length - 1];
+    };
+
+    const hasTextSelection = () => {
+      const sel = window.getSelection();
+      return !!(textSelection && (textSelection.path || textSelection.startLine) && sel && !sel.isCollapsed && sel.rangeCount);
+    };
+
+    // Rows clicked or dragged across in the diff, by line number, so the button
+    // can sit on the first selected line whatever markup GitHub uses.
+    let clickedRows = new Map<number, Element>();
+    const rememberRow = (e: Event) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const row = target?.closest('tr, [role="row"]');
+      const line = row && lineNumberFor(row);
+      if (row && line) clickedRows.set(line, row);
+      if (clickedRows.size > 20) clickedRows = new Map([...clickedRows].slice(-10));
+    };
+    ctx.addEventListener(document, 'pointerdown', rememberRow, { capture: true });
+    ctx.addEventListener(document, 'pointerup', rememberRow, { capture: true });
+
+    const firstLineRow = (s: CodeSelection): Element | null => {
+      if (!s.startLine) return null;
+      const clicked = clickedRows.get(s.startLine);
+      if (clicked?.isConnected) return clicked;
+      const line = lineElementFor(s, s.startLine);
+      return line ? line.closest('tr, [role="row"]') ?? line : null;
+    };
 
     const place = () => {
       if (!context.pr) return floating.hide();
-      const sel = window.getSelection();
-      const inDiff = textSelection && (textSelection.path || textSelection.startLine);
-      if (inDiff && sel && !sel.isCollapsed && sel.rangeCount) {
-        const rects = sel.getRangeAt(0).getClientRects();
-        const last = rects[rects.length - 1];
-        if (last) return floating.showAfter(last);
+      if (hasTextSelection()) {
+        const range = window.getSelection()!.getRangeAt(0);
+        const first = range.getClientRects()[0];
+        if (first) return floating.showAbove(first.top, range.getBoundingClientRect().right);
       }
       const hash = readHashSelection();
-      // GitHub's comment box for these lines already carries its own button.
-      if (hash && !commentBoxes.some((box) => box.isConnected && sameLines(hash, box.selection()))) {
-        const line = lineElementFor(hash);
-        if (line) {
-          const row = line.closest('tr, [role="row"]') ?? line.parentElement ?? line;
-          return floating.showInRow(row.getBoundingClientRect(), line.getBoundingClientRect());
-        }
+      const box = openCommentBox(hash);
+      if (box) {
+        const r = box.getBoundingClientRect();
+        return floating.showAbove(r.top, r.right);
+      }
+      const row = hash && firstLineRow(hash);
+      if (row) {
+        const r = row.getBoundingClientRect();
+        return floating.showAbove(r.top, r.right - 16);
       }
       floating.hide();
     };
+
+    const floating = createFloatingButton(() => {
+      const hash = readHashSelection();
+      const box = openCommentBox(hash);
+      askAbout(hasTextSelection() ? readDiffSelection() : (box && readCommentBoxSelection(box)) ?? hash);
+      floating.hide();
+    });
+    ctx.onInvalidated(() => floating.remove());
 
     let placeFrame = 0;
     const schedulePlace = () => {
@@ -93,45 +132,10 @@ export default defineContentScript({
       placeFrame = requestAnimationFrame(place);
     };
 
-    // Comment box button: GitHub's inline comment box names its lines in a
-    // header such as "Add a comment on lines R15 to R30".
-    const commentBoxes: { isConnected: boolean; selection: () => CodeSelection | null }[] = [];
-    const seenTextareas = new WeakSet<HTMLTextAreaElement>();
-
-    const findHeader = (textarea: HTMLTextAreaElement): Element | null => {
-      let container: Element | null = textarea;
-      for (let depth = 0; container && depth < 10; depth++, container = container.parentElement) {
-        const headers = [...container.querySelectorAll('h1, h2, h3, h4, h5, h6, span, div, p, strong')].filter(
-          (el) => (el.textContent?.length ?? 0) < 80 && COMMENT_HEADER.test(el.textContent?.trim() ?? ''),
-        );
-        if (headers.length) return headers[headers.length - 1];
-      }
-      return null;
-    };
-
-    const addCommentBoxButtons = () => {
-      if (!context.pr) return;
-      for (const textarea of document.querySelectorAll('textarea')) {
-        if (seenTextareas.has(textarea)) continue;
-        seenTextareas.add(textarea);
-        const header = findHeader(textarea);
-        if (!header) continue;
-        let cancel: HTMLButtonElement | undefined;
-        for (let el = textarea.parentElement, depth = 0; el && depth < 12 && !cancel; el = el.parentElement, depth++) {
-          if (el.contains(header)) cancel = [...el.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel');
-        }
-        if (!cancel?.parentElement) continue;
-        const read = () => (header.isConnected ? readCommentBoxSelection(header) : null) ?? readHashSelection();
-        const button = createCommentBoxButton(() => askAbout(read()));
-        cancel.parentElement.insertBefore(button, cancel);
-        commentBoxes.push({
-          get isConnected() {
-            return button.isConnected;
-          },
-          selection: read,
-        });
-      }
-      for (let i = commentBoxes.length - 1; i >= 0; i--) if (!commentBoxes[i].isConnected) commentBoxes.splice(i, 1);
+    const findCommentBoxes = () => {
+      commentBoxes = context.pr
+        ? [...document.querySelectorAll('textarea')].map(commentBoxFor).filter((box): box is Element => !!box)
+        : [];
     };
 
     let scanTimer: number | undefined;
@@ -139,7 +143,7 @@ export default defineContentScript({
       if (scanTimer !== undefined) return;
       scanTimer = ctx.setTimeout(() => {
         scanTimer = undefined;
-        addCommentBoxButtons();
+        findCommentBoxes();
         schedulePlace();
       }, 200);
     });

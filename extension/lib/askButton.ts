@@ -1,6 +1,6 @@
-// Quack's only UI inside GitHub's page: an "Ask AI" button next to selected
-// diff lines and one in GitHub's inline comment box. Both live in shadow roots
-// so GitHub's styles don't reach them; GitHub's color variables still do.
+// Quack's only UI inside GitHub's page: a floating "Ask AI" button above the
+// selected diff lines. It lives in a shadow root so GitHub's styles don't reach
+// it; GitHub's color variables still do.
 
 const SHORTCUT = /Mac/.test(navigator.platform) ? '⌘⇧K' : 'Ctrl+Shift+K';
 
@@ -31,17 +31,6 @@ const FLOATING_STYLE = `${BASE_STYLE}
   }
 `;
 
-const COMMENT_BOX_STYLE = `${BASE_STYLE}
-  :host { display: inline-flex; margin-right: 8px; }
-  button {
-    height: 32px; padding: 0 12px; font-weight: 500; font-size: 14px;
-    color: var(--button-default-fgColor-rest, var(--fgColor-default, #1f2328));
-    background: var(--button-default-bgColor-rest, var(--bgColor-muted, #f6f8fa));
-    border: 1px solid var(--button-default-borderColor-rest, var(--borderColor-default, #d1d9e0));
-  }
-  button:hover { background: var(--button-default-bgColor-hover, var(--bgColor-neutral-muted, #eff2f5)); }
-`;
-
 function shadowButton(tag: string, style: string, html: string, title: string, onClick: () => void): HTMLElement {
   const host = document.createElement(tag);
   const root = host.attachShadow({ mode: 'closed' });
@@ -57,10 +46,8 @@ function shadowButton(tag: string, style: string, html: string, title: string, o
 }
 
 export interface FloatingButton {
-  /** Just after the end of a text selection. */
-  showAfter(rect: DOMRect): void;
-  /** At the right end of a selected row, level with its line number. */
-  showInRow(row: DOMRect, line: DOMRect): void;
+  /** Just above `top`, with its right edge at `right` (viewport coordinates). */
+  showAbove(top: number, right: number): void;
   hide(): void;
   remove(): void;
 }
@@ -79,25 +66,17 @@ export function createFloatingButton(onAsk: () => void): FloatingButton {
   // documentElement rather than body: GitHub swaps <body> when it navigates.
   document.documentElement.append(host);
 
-  const place = (left: number, centerY: number, visible: boolean) => {
-    if (!visible) {
-      host.style.display = 'none';
-      return;
-    }
-    host.style.display = 'block';
-    const { width, height } = host.getBoundingClientRect();
-    const x = Math.max(MARGIN, Math.min(left, window.innerWidth - width - MARGIN));
-    host.style.transform = `translate(${Math.round(x)}px, ${Math.round(centerY - height / 2)}px)`;
-  };
-  const onScreen = (r: DOMRect) => r.bottom > 0 && r.top < window.innerHeight && (r.width > 0 || r.height > 0);
-
   return {
-    showAfter(rect) {
-      place(rect.right + 6, rect.top + rect.height / 2, onScreen(rect));
-    },
-    showInRow(row, line) {
-      const width = host.getBoundingClientRect().width || 120;
-      place(row.right - width - 12, line.top + line.height / 2, onScreen(line));
+    showAbove(top, right) {
+      host.style.display = 'block';
+      const { width, height } = host.getBoundingClientRect();
+      const y = top - height - 4;
+      if (y + height < 0 || y > window.innerHeight) {
+        host.style.display = 'none';
+        return;
+      }
+      const x = Math.max(MARGIN, Math.min(right - width, window.innerWidth - width - MARGIN));
+      host.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     },
     hide() {
       host.style.display = 'none';
@@ -106,14 +85,4 @@ export function createFloatingButton(onAsk: () => void): FloatingButton {
       host.remove();
     },
   };
-}
-
-export function createCommentBoxButton(onAsk: () => void): HTMLElement {
-  return shadowButton(
-    'quack-comment-ask',
-    COMMENT_BOX_STYLE,
-    `${ICON}<span>Ask AI</span>`,
-    `Ask Quack about these lines (${SHORTCUT})`,
-    onAsk,
-  );
 }
