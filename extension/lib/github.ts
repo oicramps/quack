@@ -52,13 +52,16 @@ function filePathFor(el: Element | null): string | undefined {
       const link = cur.querySelector('.file-info a[title], .file-header a[title], h3 a[title]');
       const title = link?.getAttribute('title');
       if (title) return title;
+      const headerLink = cur.querySelector('h3 a[href^="#diff-"], a[href^="#diff-"] code');
+      const text = headerLink?.textContent?.replace(/[\u200e\u200f]/g, '').trim();
+      if (text && /^[^\s]+\.[^\s]+$|\//.test(text)) return text;
     }
   }
   return undefined;
 }
 
 function lineNumberFor(el: Element | null): number | undefined {
-  const row = el?.closest('tr');
+  const row = el?.closest('tr, [role="row"]');
   if (!row) return undefined;
   const numbers: { n: number; side: string | null }[] = [];
   for (const cell of row.querySelectorAll('[data-line-number]')) {
@@ -68,11 +71,17 @@ function lineNumberFor(el: Element | null): number | undefined {
   const right = numbers.find((x) => x.side === 'right');
   if (right) return right.n;
   if (numbers.length) return numbers[numbers.length - 1].n;
-  for (const cell of row.querySelectorAll('[id]')) {
-    const m = cell.id.match(/R(\d+)$/);
-    if (m) return Number(m[1]);
+  // Anchors like "diff-<hash>R12" (new file side) or "...L12" (old side).
+  let left: number | undefined;
+  for (const cell of row.querySelectorAll('[id], [data-line-anchor]')) {
+    const m = (cell.getAttribute('data-line-anchor') ?? cell.id).match(/([LR])(\d+)$/);
+    if (m?.[1] === 'R') return Number(m[2]);
+    if (m) left ??= Number(m[2]);
   }
-  return undefined;
+  if (left) return left;
+  // Last resort: the last cell that holds only a number.
+  const numericCells = [...row.children].map((c) => c.textContent?.trim() ?? '').filter((t) => /^\d+$/.test(t));
+  return numericCells.length ? Number(numericCells[numericCells.length - 1]) : undefined;
 }
 
 /** The current text selection, if it is inside a diff. */
@@ -87,7 +96,10 @@ export function readDiffSelection(): CodeSelection | null {
   const path = filePathFor(startEl) ?? filePathFor(endEl);
   let startLine = lineNumberFor(startEl);
   let endLine = lineNumberFor(endEl) ?? startLine;
-  if (!path && startLine === undefined) return null;
+  // Ignore selections in GitHub's header and navigation; keep anything else on the PR page.
+  if (!path && startLine === undefined && startEl?.closest('header, nav, [role="navigation"], [role="banner"]')) {
+    return null;
+  }
   if (startLine !== undefined && endLine !== undefined && endLine < startLine) [startLine, endLine] = [endLine, startLine];
   return { path, startLine, endLine, text: text.slice(0, 20_000) };
 }
