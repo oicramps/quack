@@ -7,7 +7,7 @@ import { clip, relativeTo, runJsonLines, stripAnsi } from './stream.ts';
 import type { Adapter, AdapterEvent, AskOpts, LineParser } from './types.ts';
 
 const MODELS = ['sonnet', 'opus', 'haiku'];
-const RECHECK: FixStep = { text: 'Then press Recheck.' };
+const RECHECK: FixStep = { text: 'Then press Re-check.' };
 const LOGIN: FixStep = { text: 'Log in: run Claude Code once and complete the browser sign-in, then quit it', command: 'claude' };
 
 /**

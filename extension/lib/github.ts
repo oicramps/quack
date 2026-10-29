@@ -19,8 +19,15 @@ export function readPrTitle(): string | undefined {
 }
 
 export function readBaseRef(): string | undefined {
-  const el = document.querySelector('.base-ref, [class*="BaseRef"] a, .commit-ref.base-ref');
-  const text = el?.textContent?.trim().replace(/^[^:]+:/, '');
+  return readRef('.base-ref, [class*="BaseRef"] a, .commit-ref.base-ref');
+}
+
+export function readHeadRef(): string | undefined {
+  return readRef('.head-ref, [class*="HeadRef"] a, .commit-ref.head-ref');
+}
+
+function readRef(selector: string): string | undefined {
+  const text = document.querySelector(selector)?.textContent?.trim().replace(/^[^:]+:/, '');
   return text && /^[A-Za-z0-9._\/-]+$/.test(text) ? text : undefined;
 }
 

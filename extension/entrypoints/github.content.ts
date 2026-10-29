@@ -9,6 +9,7 @@ import {
   lineNumberFor,
   parsePrUrl,
   readBaseRef,
+  readHeadRef,
   readCommentBoxSelection,
   readDiffSelection,
   readHashSelection,
@@ -56,7 +57,7 @@ export default defineContentScript({
       const pr = parsePrUrl(location.href);
       const prChanged = pr?.number !== context.pr?.number || pr?.repo !== context.pr?.repo || pr?.owner !== context.pr?.owner;
       context = {
-        pr: pr ? { ...pr, title: readPrTitle(), baseRef: readBaseRef() } : null,
+        pr: pr ? { ...pr, title: readPrTitle(), baseRef: readBaseRef(), headRef: readHeadRef() } : null,
         lastSelection: (pr && pickedLines()) || (prChanged ? null : context.lastSelection),
         theme: githubTheme(),
       };
@@ -106,23 +107,26 @@ export default defineContentScript({
       return line ? line.closest('tr, [role="row"]') ?? line : null;
     };
 
+    const linesLabel = (s: CodeSelection | null) =>
+      s?.startLine ? `L${s.startLine}${s.endLine && s.endLine !== s.startLine ? `–${s.endLine}` : ''}` : undefined;
+
     const place = () => {
       if (!context.pr) return floating.hide();
       if (hasTextSelection()) {
         const range = window.getSelection()!.getRangeAt(0);
         const first = range.getClientRects()[0];
-        if (first) return floating.showAbove(first.top, range.getBoundingClientRect().right);
+        if (first) return floating.showAbove(first.top, range.getBoundingClientRect().right, linesLabel(textSelection));
       }
       const hash = pickedLines();
       const box = openCommentBox(hash);
       if (box) {
         const r = box.getBoundingClientRect();
-        return floating.showAbove(r.top, r.right);
+        return floating.showAbove(r.top, r.right, linesLabel(readCommentBoxSelection(box) ?? hash));
       }
       const row = hash && firstLineRow(hash);
       if (row) {
         const r = row.getBoundingClientRect();
-        return floating.showAbove(r.top, r.right - 16);
+        return floating.showAbove(r.top, r.right - 16, linesLabel(hash));
       }
       floating.hide();
     };

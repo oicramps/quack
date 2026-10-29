@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Quack panel states</title>
+    <style>
+      body { margin: 24px; font: 13px -apple-system, sans-serif; background: #e7eaee; }
+      .grid { display: flex; flex-wrap: wrap; gap: 24px; }
+      figure { margin: 0; }
+      figcaption { margin-bottom: 6px; color: #4d5a6e; }
+      iframe { width: 420px; height: 900px; border: 1px solid #dadfe5; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <div class="grid" id="grid"></div>
+    <script type="module">
+      const theme = new URLSearchParams(location.search).get('theme') ?? 'light';
+      const scenarios = ['empty', 'selection', 'preparing', 'streaming', 'done', 'error', 'not-installed', 'backend-menu', 'model-menu', 'offline'];
+      for (const s of scenarios) {
+        const fig = document.createElement('figure');
+        fig.innerHTML = `<figcaption>${s}</figcaption><iframe src="./index.html?scenario=${s}&theme=${theme}"></iframe>`;
+        document.getElementById('grid').append(fig);
+      }
+    </script>
+  </body>
+</html>

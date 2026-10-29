@@ -5,7 +5,7 @@ import { clip, relativeTo, runJsonLines, stripAnsi } from './stream.ts';
 import type { Adapter, AdapterEvent, AskOpts, LineParser } from './types.ts';
 
 const INSTALL: FixStep = { text: 'Install the Cursor CLI', command: 'curl https://cursor.com/install -fsS | bash' };
-const RECHECK: FixStep = { text: 'Then press Recheck.' };
+const RECHECK: FixStep = { text: 'Then press Re-check.' };
 
 // Shown when the CLI is too old to list its models.
 const FALLBACK_MODELS = ['', 'auto', 'gpt-5', 'sonnet-4', 'sonnet-4-thinking'];

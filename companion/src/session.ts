@@ -66,7 +66,7 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
     }
     if (signal.aborted) throw new AskError('cancelled', 'Stopped.');
 
-    progress('preparing_worktree');
+    progress('preparing_worktree', ctx.headSha);
     const dir = worktreePath(config, pr.owner, pr.repo, pr.number);
     try {
       release = await acquireLock(dir, signal);

@@ -2,7 +2,8 @@ import type { CodeSelection, PrRef } from '@quack/shared';
 
 /** What the content script reports about a GitHub tab. */
 export interface PageContext {
-  pr: PrRef | null;
+  /** headRef is shown in the panel only; the companion resolves the PR itself. */
+  pr: (PrRef & { headRef?: string }) | null;
   lastSelection: CodeSelection | null;
   theme: 'light' | 'dark';
 }
