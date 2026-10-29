@@ -10,6 +10,7 @@
     "build:edge": "wxt build -b edge",
     "zip": "wxt zip",
     "preview": "vite --config preview/vite.config.ts",
+    "icons": "mkdir -p public/icon && for s in 16 32 48 128; do rsvg-convert -w $s -h $s assets/icon.svg -o public/icon/$s.png; done",
     "typecheck": "wxt prepare && tsc --noEmit"
   },
   "dependencies": {

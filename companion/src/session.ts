@@ -4,13 +4,15 @@ import { adapters } from './adapters/index.ts';
 import { loadConfig } from './config.ts';
 import { log } from './log.ts';
 import { buildFollowUp, buildPrompt } from './prompt.ts';
-import { prDiff, resolvePr } from './pr.ts';
+import { type PrContext, prDiff, resolvePr } from './pr.ts';
 import { findClone } from './repo.ts';
 import { resolveSelections } from './selection.ts';
 import { acquireLock, changedFiles, prepareWorktree, worktreePath } from './worktree.ts';
 
 export type Send = (message: CompanionMessage) => void;
 export type GetStatus = (backend: AskRequest['backend']) => Promise<BackendStatus>;
+
+const prContexts = new Map<string, PrContext>();
 
 class AskError extends Error {
   code: ErrorCode;
@@ -56,13 +58,19 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
     if (signal.aborted) throw new AskError('cancelled', 'Stopped.');
 
     progress('fetching_pr');
-    let ctx;
-    try {
-      ctx = await resolvePr(clone, pr);
-    } catch (err) {
-      throw new AskError('fetch_failed', `Could not fetch PR #${pr.number}: ${(err as Error).message}`, [
-        { text: 'Check that git can reach GitHub from your clone', command: `git -C "${clone}" fetch origin` },
-      ]);
+    // A follow-up stays on the commit its thread started on, which this host
+    // fetched moments ago; only a new thread fetches the PR again.
+    const cacheKey = `${clone}#${pr.number}`;
+    let ctx = req.sessionId ? prContexts.get(cacheKey) : undefined;
+    if (!ctx) {
+      try {
+        ctx = await resolvePr(clone, pr);
+      } catch (err) {
+        throw new AskError('fetch_failed', `Could not fetch PR #${pr.number}: ${(err as Error).message}`, [
+          { text: 'Check that git can reach GitHub from your clone', command: `git -C "${clone}" fetch origin` },
+        ]);
+      }
+      prContexts.set(cacheKey, ctx);
     }
     if (signal.aborted) throw new AskError('cancelled', 'Stopped.');
 
@@ -80,6 +88,7 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
 
     let prompt: string;
     if (req.sessionId) {
+      log(requestId, 'resuming session', req.sessionId);
       prompt = buildFollowUp(selections, req.question);
     } else {
       const { diff, truncated } = await prDiff(clone, ctx.baseSha, ctx.headSha);

@@ -236,8 +236,8 @@ input:focus {
 }
 
 .pill {
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
+  line-height: 18px;
   height: 20px;
   padding: 0 7px;
   border: 1px solid var(--line);
@@ -251,6 +251,8 @@ input:focus {
   white-space: nowrap;
 }
 button.pill {
+  display: inline-flex;
+  align-items: center;
   height: 24px;
   font-weight: 400;
   font-size: 12px;
@@ -270,12 +272,17 @@ button.pill {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  container: header / inline-size;
 }
 .title-row {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+.title-row .logo {
+  flex: none;
+  margin-right: 2px;
 }
 .pr-number {
   flex: none;
@@ -362,6 +369,9 @@ button.pill {
 .menu {
   min-width: 0;
 }
+.menu:has(> .picker-button) {
+  display: flex;
+}
 .picker-button {
   height: 30px;
   padding: 0 8px 0 10px;
@@ -369,7 +379,13 @@ button.pill {
   background: var(--btn);
   font-size: 14px;
   color: var(--fg);
+  min-width: 0;
   max-width: 190px;
+}
+@container header (max-width: 420px) {
+  .status-text {
+    display: none;
+  }
 }
 .picker-button > :not(svg) {
   overflow: hidden;
@@ -565,6 +581,11 @@ body[data-theme='dark'] .menu-popover {
   gap: 8px;
   padding-top: 8px;
 }
+.intro h2.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .intro h2 {
   font-size: 16px;
   line-height: 24px;
@@ -714,9 +735,10 @@ body[data-theme='dark'] .menu-popover {
 }
 .prep-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: 2px 8px;
   font-size: 13px;
 }
 .prep-steps {
@@ -741,6 +763,13 @@ body[data-theme='dark'] .menu-popover {
 .prep-label {
   flex: 1 1 auto;
   min-width: 0;
+}
+.prep-head > * {
+  white-space: nowrap;
+}
+.prep-state {
+  flex: none;
+  white-space: nowrap;
 }
 .prep-label code {
   font-size: 13px;

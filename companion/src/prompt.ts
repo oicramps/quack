@@ -54,9 +54,11 @@ export function buildPrompt(input: PromptInput): string {
 /** Follow-ups resume the agent session, which already has the PR context. */
 export function buildFollowUp(selections: CodeSelection[], question: string): string {
   // Leading text also keeps a question like "-v?" from being read as a CLI flag.
-  const parts = ['Follow-up from the reviewer.'];
+  const parts = [
+    'The reviewer has a follow-up question about the same pull request. Answer it in the context of this conversation: "here", "this" and "it" refer to the code and answers above.',
+  ];
   if (selections.length) parts.push(selectionBlock(selections));
-  parts.push(question.trim());
+  parts.push(`# Question\n\n${question.trim()}`);
   parts.push('Reminder: read-only, search before claiming something is missing, cite code as `path:line`.');
   return parts.join('\n\n');
 }

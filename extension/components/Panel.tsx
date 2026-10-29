@@ -24,6 +24,7 @@ import {
   ErrorCircle,
   FileIcon,
   Plus,
+  QuackMark,
   Retry,
   Search,
   Spinner,
@@ -325,7 +326,9 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
       <div className="quack panel">
         <div className="body">
           <section className="intro">
-            <h2>Quack</h2>
+            <h2 className="brand">
+              <QuackMark size={24} /> Quack
+            </h2>
             <p className="muted">Open a pull request on github.com to ask about its code.</p>
           </section>
         </div>
@@ -362,6 +365,7 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     <div className="quack panel">
       <header className="header">
         <div className="title-row">
+          <QuackMark size={16} className="logo" />
           <span className="pr-number">#{pr.number}</span>
           <span className="pr-title" title={pr.title}>
             {pr.title ?? ''}
@@ -386,8 +390,8 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
             disabled={offline}
             onChange={selectModel}
           />
-          <span className={`status ${status.tone}`}>
-            <StatusDot tone={status.tone === 'busy' ? 'ok' : status.tone} /> {status.text}
+          <span className={`status ${status.tone}`} title={status.text}>
+            <StatusDot tone={status.tone === 'busy' ? 'ok' : status.tone} /> <span className="status-text">{status.text}</span>
           </span>
         </div>
       </header>
@@ -649,7 +653,7 @@ function PrepCard({ turn, pr, onCancel }: { turn: Turn; pr: NonNullable<PanelPag
                 {state === 'done' ? <Check size={12} /> : state === 'current' ? <Spinner size={16} /> : <Circle size={16} />}
               </span>
               <span className="prep-label">{label(step, entry?.detail)}</span>
-              <span className="muted small">
+              <span className="muted small prep-state">
                 {state === 'done' ? `Done${entry && next ? ` · ${duration(next.at - entry.at)}` : ''}` : state === 'current' ? 'In progress' : 'Waiting'}
               </span>
             </li>
@@ -746,7 +750,7 @@ function TurnView({
 
   const meta = isRunning ? (
     <>
-      <Spinner size={14} /> Answering · {elapsed}
+      <Spinner size={14} /> {preparing ? 'Resuming the conversation' : 'Answering'} · {elapsed}
     </>
   ) : turn.status === 'done' ? (
     <>
@@ -778,7 +782,7 @@ function TurnView({
         <p>{turn.question}</p>
       </section>
 
-      {preparing ? (
+      {preparing && turn.first ? (
         <PrepCard turn={turn} pr={pr} onCancel={onStop} />
       ) : (
         <section className="answer" aria-label="Answer">
