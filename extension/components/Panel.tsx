@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type {
   BackendId,
@@ -11,8 +11,8 @@ import type {
 } from '@quack/shared';
 import { PROGRESS_LABELS, QUACK_VERSION } from '@quack/shared';
 import { type CompanionClient, newRequestId } from '../lib/client';
-import { githubTheme, prKey, selectionLabel } from '../lib/github';
-import { PANEL_WIDTH, RAIL_WIDTH, type PageStore, setDock } from '../lib/page';
+import { prKey, selectionLabel } from '../lib/github';
+import type { PanelPage } from '../lib/page';
 import { BackendPicker } from './BackendPicker';
 import { FixSteps } from './FixSteps';
 
@@ -72,8 +72,7 @@ interface Prefs {
 
 const PREFS_KEY = 'quack.prefs';
 
-export function Panel({ store, client }: { store: PageStore; client: CompanionClient }) {
-  const page = useSyncExternalStore(store.subscribe, store.get);
+export function Panel({ page, client }: { page: PanelPage; client: CompanionClient }) {
   const pr = page.pr;
   const key = pr ? prKey(pr) : '';
 
@@ -84,33 +83,14 @@ export function Panel({ store, client }: { store: PageStore; client: CompanionCl
   const [chips, setChips] = useState<CodeSelection[]>([]);
   const [question, setQuestion] = useState('');
   const [running, setRunning] = useState<{ requestId: string; turnId: string } | null>(null);
-  const [theme, setTheme] = useState(githubTheme());
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const answerEndRef = useRef<HTMLDivElement>(null);
+  const theme = page.theme;
 
   const thread = threads[key];
   const backend = prefs.backend;
   const backendStatus = backends.find((b) => b.id === backend);
   const model = prefs.models[backend] ?? backendStatus?.models[0] ?? '';
-
-  // Dock: reserve space for the panel or the collapsed rail.
-  useEffect(() => {
-    setDock(page.open ? PANEL_WIDTH : RAIL_WIDTH);
-    return () => setDock(0);
-  }, [page.open]);
-
-  // Follow GitHub's light/dark theme.
-  useEffect(() => {
-    const update = () => setTheme(githubTheme());
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-color-mode', 'data-dark-theme'] });
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    mq.addEventListener('change', update);
-    return () => {
-      observer.disconnect();
-      mq.removeEventListener('change', update);
-    };
-  }, []);
 
   useEffect(() => {
     browser.storage.local.get(PREFS_KEY).then((r) => {
@@ -262,29 +242,24 @@ export function Panel({ store, client }: { store: PageStore; client: CompanionCl
   const versionMismatch = connection.state === 'connected' && connection.version !== QUACK_VERSION;
   const otherReadyBackend = useMemo(() => backends.find((b) => b.id !== backend && b.state === 'ready'), [backends, backend]);
 
-  if (!pr) return null;
-
-  if (!page.open) {
+  if (!pr) {
     return (
-      <div className="quack rail" data-theme={theme}>
-        <button className="rail-button" onClick={() => store.set({ open: true })} title="Open Quack (Cmd/Ctrl+Shift+K)" aria-label="Open Quack">
-          Q
-        </button>
+      <div className="quack panel" data-theme={theme}>
+        <div className="empty pad muted">
+          <p>Open a pull request on github.com to ask about its code.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="quack panel" data-theme={theme} style={{ width: PANEL_WIDTH }}>
+    <div className="quack panel" data-theme={theme}>
       <header className="header">
         <div className="title-row">
           <span className="pr-title" title={pr.title}>
             #{pr.number} {pr.title ?? ''}
           </span>
           {thread?.turns.at(-1)?.headSha && <code className="sha">{thread.turns.at(-1)!.headSha!.slice(0, 7)}</code>}
-          <button className="icon" onClick={() => store.set({ open: false })} aria-label="Collapse panel" title="Collapse">
-            ⟩
-          </button>
         </div>
         {connection.state === 'connected' && (
           <div className="pickers">
@@ -317,6 +292,8 @@ export function Panel({ store, client }: { store: PageStore; client: CompanionCl
           <FixSteps steps={[{ text: 'Reinstall the companion', command: 'cd ~/Documents/Dev/Projects/quack && npm run install-host' }]} />
         </section>
       )}
+
+      {page.notice && <p className="hint pad small">{page.notice}</p>}
 
       {backendStatus?.hint && <p className="hint pad small">{backendStatus.hint}</p>}
 

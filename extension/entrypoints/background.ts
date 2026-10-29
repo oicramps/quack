@@ -1,16 +1,44 @@
 import type { Browser } from 'wxt/browser';
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
-import type { CompanionMessage, ExtensionMessage } from '@quack/shared';
+import type { CodeSelection, CompanionMessage, ExtensionMessage } from '@quack/shared';
 import { HOST_NAME } from '@quack/shared';
-import type { FromBackground, ToBackground } from '../lib/messages';
+import type { FromBackground, RuntimeMessage, TabRequest, ToBackground } from '../lib/messages';
 
 type Port = Browser.runtime.Port;
 
-// One native port per browser session, shared by every PR tab. It is opened on
-// the first request and closed when the last panel goes away, which lets Chrome
-// stop the companion.
 export default defineBackground(() => {
+  // The toolbar icon opens Chrome's side panel.
+  browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
+  // Cmd/Ctrl+Shift+K: open the panel and attach the selected diff lines. A
+  // keyboard command counts as a user gesture, which sidePanel.open requires.
+  let pendingAttach: { tabId: number; selection: CodeSelection | null } | null = null;
+
+  browser.commands.onCommand.addListener((command, tab) => {
+    if (command !== 'ask-about-selection' || tab?.id === undefined) return;
+    const tabId = tab.id;
+    browser.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+    browser.tabs
+      .sendMessage(tabId, { kind: 'get-selection' } satisfies TabRequest)
+      .catch(() => null)
+      .then((selection) => {
+        pendingAttach = { tabId, selection: (selection as CodeSelection | null) ?? null };
+        // Reaches the panel if it was already open; otherwise it asks on load.
+        browser.runtime.sendMessage({ kind: 'attach', ...pendingAttach } satisfies RuntimeMessage).catch(() => {});
+      });
+  });
+
+  browser.runtime.onMessage.addListener((msg: RuntimeMessage, _sender, sendResponse) => {
+    if (msg?.kind !== 'panel-ready') return false;
+    sendResponse(pendingAttach);
+    pendingAttach = null;
+    return false;
+  });
+
+  // One native port per browser session, shared by every side panel. It opens
+  // on the first request and closes when the last panel goes away, which lets
+  // Chrome stop the companion.
   let native: Port | null = null;
   const panels = new Set<Port>();
   const owners = new Map<string, Port>();
@@ -60,7 +88,7 @@ export default defineBackground(() => {
       }
     });
 
-    // Panel closed or tab navigated away: stop its agents.
+    // Side panel closed: stop its agents.
     port.onDisconnect.addListener(() => {
       panels.delete(port);
       for (const [requestId, owner] of owners) {

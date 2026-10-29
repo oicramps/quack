@@ -2,7 +2,7 @@
 
 Ask Claude Code or Cursor about a pull request's code from the GitHub PR page, without stashing your work or checking the PR out.
 
-A browser extension shows a panel docked beside the diff. A local companion, started by the browser on demand, fetches the PR into a separate git worktree at the PR's commit and runs your AI tool there, read-only. Your own checkout is never touched.
+A browser extension shows a panel in Chrome's side panel, next to the PR. A local companion, started by the browser on demand, fetches the PR into a separate git worktree at the PR's commit and runs your AI tool there, read-only. Your own checkout is never touched.
 
 Status: **Spike**. The panel is intentionally unstyled; see `docs/spike-findings.md`.
 
@@ -37,8 +37,9 @@ For development, `npm run dev` rebuilds the extension on change (reload it in `c
 
 ## Using it
 
+- Open the panel by clicking the Quack toolbar icon. It opens in Chrome's side panel and follows the active tab.
 - Ask about the whole PR: type a question in the panel.
-- Ask about specific code: select lines in the diff and press **Cmd/Ctrl+Shift+K**, or click **Attach selection** in the panel.
+- Ask about specific code: select lines in the diff and press **Cmd/Ctrl+Shift+K** (opens the panel with the selection attached; change it in `chrome://extensions/shortcuts`), or click **Attach selection** in the panel.
 - **Enter** sends, **Shift+Enter** adds a line, **Esc** stops a running answer.
 - Follow-up questions continue the same agent session. Switching backend starts a new thread.
 

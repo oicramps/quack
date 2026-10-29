@@ -32,24 +32,22 @@
   box-sizing: inherit;
 }
 
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #ffffff;
+}
+body[data-theme='dark'] {
+  background: #0d1117;
+}
+#root {
+  height: 100%;
+}
 .panel {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border);
-}
-.rail {
-  height: 100vh;
-  width: 36px;
-  border-left: 1px solid var(--border);
-  display: flex;
-  justify-content: center;
-  padding-top: 72px;
-}
-.rail-button {
-  width: 28px;
-  height: 28px;
-  font-weight: 600;
 }
 
 .pad {
