@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { type ReactNode, memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type {
   BackendId,
@@ -401,7 +401,22 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     return pr?.headSha;
   }, [thread, pr?.headSha]);
 
-  const repoLink: RepoLink | null = pr ? { owner: pr.owner, repo: pr.repo, sha: knownSha } : null;
+  const repoLink = useMemo<RepoLink | null>(
+    () => (pr ? { owner: pr.owner, repo: pr.repo, sha: knownSha } : null),
+    [pr?.owner, pr?.repo, knownSha],
+  );
+
+  // Stable for the panel's lifetime and always calling the latest handlers, so memoized turns don't re-render.
+  const latest = useRef({ stop, retry, checkStatus });
+  latest.current = { stop, retry, checkStatus };
+  const turnActions = useMemo<TurnActions>(
+    () => ({
+      stop: () => latest.current.stop(),
+      retry: (turn, withBackend) => latest.current.retry(turn, withBackend),
+      recheck: () => latest.current.checkStatus(),
+    }),
+    [],
+  );
 
   if (!pr) {
     const readiness: { tone: 'ok' | 'warn' | 'idle'; text: string } = offline
@@ -527,13 +542,10 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
               <TurnView
                 key={turn.id}
                 turn={turn}
-                pr={pr}
+                prNumber={pr.number}
                 link={repoLink!}
-                onStop={stop}
-                onRetry={() => retry(turn)}
-                onRecheck={checkStatus}
                 otherBackend={otherReadyBackend}
-                onRetryOther={(id) => retry(turn, id)}
+                actions={turnActions}
               />
             ))}
             {thread?.turns.length && !running ? (
@@ -852,7 +864,7 @@ function CompanionOffline({ error, onRetry }: { error: string; onRetry: () => vo
 
 const STEP_ORDER: ProgressStep[] = ['finding_repo', 'fetching_pr', 'preparing_worktree', 'starting_agent'];
 
-function PrepCard({ turn, pr, onCancel }: { turn: Turn; pr: NonNullable<PanelPage['pr']>; onCancel: () => void }) {
+function PrepCard({ turn, prNumber, onCancel }: { turn: Turn; prNumber: number; onCancel: () => void }) {
   const current = turn.steps.at(-1)?.step ?? 'finding_repo';
   const currentIndex = STEP_ORDER.indexOf(current);
   const label = (step: ProgressStep, detail?: string) => {
@@ -860,7 +872,7 @@ function PrepCard({ turn, pr, onCancel }: { turn: Turn; pr: NonNullable<PanelPag
       case 'finding_repo':
         return 'Finding local clone';
       case 'fetching_pr':
-        return `Fetching PR #${pr.number}`;
+        return `Fetching PR #${prNumber}`;
       case 'preparing_worktree':
         return detail ? (
           <>
@@ -956,25 +968,31 @@ function errorTitle(code: ErrorCode | 'disconnected', backend: string): string {
   }
 }
 
-function TurnView({
+interface TurnActions {
+  stop: () => void;
+  retry: (turn: Turn, backend?: BackendId) => void;
+  recheck: () => void;
+}
+
+// Memoized so typing or picking lines in the diff doesn't re-render (and
+// re-highlight) every answer; only the turn being streamed changes.
+const TurnView = memo(function TurnView({
   turn,
-  pr,
+  prNumber,
   link,
-  onStop,
-  onRetry,
-  onRecheck,
   otherBackend,
-  onRetryOther,
+  actions,
 }: {
   turn: Turn;
-  pr: NonNullable<PanelPage['pr']>;
+  prNumber: number;
   link: RepoLink;
-  onStop: () => void;
-  onRetry: () => void;
-  onRecheck: () => void;
   otherBackend?: BackendStatus;
-  onRetryOther: (id: BackendId) => void;
+  actions: TurnActions;
 }) {
+  const onStop = actions.stop;
+  const onRetry = () => actions.retry(turn);
+  const onRecheck = actions.recheck;
+  const onRetryOther = (id: BackendId) => actions.retry(turn, id);
   const [activityOpen, setActivityOpen] = useState(false);
   const isRunning = turn.status === 'running';
   const now = useNow(isRunning);
@@ -1021,7 +1039,7 @@ function TurnView({
       </section>
 
       {preparing && turn.first ? (
-        <PrepCard turn={turn} pr={pr} onCancel={onStop} />
+        <PrepCard turn={turn} prNumber={prNumber} onCancel={onStop} />
       ) : (
         <section className="answer" aria-label="Answer">
           <div className="answer-head">
@@ -1110,4 +1128,4 @@ function TurnView({
       )}
     </article>
   );
-}
+});

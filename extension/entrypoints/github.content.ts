@@ -19,6 +19,13 @@ import {
 import type { RuntimeMessage, TabRequest } from '../lib/messages';
 import type { PageContext } from '../lib/page';
 
+/** Fields missing from a fresh read keep their earlier value. */
+function keepKnown<T extends object>(fresh: T, known: T): T {
+  const out = { ...known } as Record<string, unknown>;
+  for (const [k, v] of Object.entries(fresh)) if (v !== undefined) out[k] = v;
+  return out as T;
+}
+
 // Reports the PR, the latest diff selection and the theme to the side panel,
 // and shows a floating "Ask AI" button above the selected lines.
 // The panel itself lives in Chrome's side panel, not in the page.
@@ -57,8 +64,11 @@ export default defineContentScript({
     const readContext = () => {
       const pr = parsePrUrl(location.href);
       const prChanged = pr?.number !== context.pr?.number || pr?.repo !== context.pr?.repo || pr?.owner !== context.pr?.owner;
+      // GitHub re-renders parts of the page as lines are picked, so a read can
+      // briefly miss the title or counts; keep what this PR already showed.
+      const fresh = pr && { ...pr, title: readPrTitle(), baseRef: readBaseRef(), headRef: readHeadRef(), ...readPrStats() };
       context = {
-        pr: pr ? { ...pr, title: readPrTitle(), baseRef: readBaseRef(), headRef: readHeadRef(), ...readPrStats() } : null,
+        pr: fresh && context.pr && !prChanged ? keepKnown(fresh, context.pr) : fresh,
         lastSelection: (pr && pickedLines()) || (prChanged ? null : context.lastSelection),
         theme: githubTheme(),
       };
