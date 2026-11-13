@@ -26,24 +26,13 @@ npx quack-companion@latest install
 
 Browser extensions are sandboxed and cannot run `git` or local CLIs directly. Chrome starts `quack-companion` automatically when you open the Quack side panel and stops it as soon as the panel closes—no background daemon or open terminal needed.
 
-```text
-  GitHub PR Page                   Chrome Side Panel
-  (diff & selected lines)  ─────▶  Quack Extension
-                                          │
-                                          │  Chrome Native Messaging (stdio)
-                                          ▼
-                                   quack-companion
-                                 (spawned on demand)
-                                    │           │
-         1. Fetch PR commit         │           │  3. Run agent read-only
-            into refs/pr-review/<n> │           │     with full repo context
-                                    ▼           ▼
-                            Your Local Clone   Detached Worktree
-                            (working tree &    (~/.quack/worktrees/...)
-                             branches stay              │
-                             untouched)                 ▼
-                                               Cursor / Claude Code
-                                               (+ optional `gh` CI logs)
+```mermaid
+flowchart TD
+  GH["GitHub PR page<br/>diff and selected lines"] --> EXT["Quack side panel"]
+  EXT -->|"Chrome Native Messaging"| HOST["quack-companion<br/>started on demand"]
+  HOST -->|"1. Fetch the PR commit<br/>into refs/pr-review"| CLONE["Your local clone<br/>working tree stays untouched"]
+  HOST -->|"2. Check out a detached worktree"| WT["~/.quack/worktrees"]
+  WT -->|"3. Run the agent read-only"| AI["Cursor or Claude Code<br/>optional: gh CI logs"]
 ```
 
 ### What Does It Touch on Disk?
