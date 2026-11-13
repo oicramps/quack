@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <rect width="128" height="128" rx="32" fill="#1c222e"/>
   <g transform="translate(22 36) scale(2.3333)">
-    <path d="M7 3C4.6 3 4.4 4.8 4.4 7V9.6C4.4 11 3.6 12 2 12C3.6 12 4.4 13 4.4 14.4V17C4.4 19.2 4.6 21 7 21" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M29 3C31.4 3 31.6 4.8 31.6 7V9.6C31.6 11 32.4 12 34 12C32.4 12 31.6 13 31.6 14.4V17C31.6 19.2 31.4 21 29 21" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M7 3C4.6 3 4.4 4.8 4.4 7V9.6C4.4 11 3.6 12 2 12C3.6 12 4.4 13 4.4 14.4V17C4.4 19.2 4.6 21 7 21" fill="none" stroke="#f3f5f7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M29 3C31.4 3 31.6 4.8 31.6 7V9.6C31.6 11 32.4 12 34 12C32.4 12 31.6 13 31.6 14.4V17C31.6 19.2 31.4 21 29 21" fill="none" stroke="#f3f5f7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M12.4 7.4C10.9 7.2 9.3 7.8 8.6 9.1C9.4 10.4 11.3 10.9 12.9 10.6Z" fill="#ff980f"/>
     <path d="M10.8 13.2C10.4 17.7 13.3 20.2 18.1 20.2C23.3 20.2 26.5 17.5 26.9 12.6C27 11.1 26.2 10.5 25.1 11.4C23.5 12.8 21.5 13.2 19.4 12.6C18.7 12.4 18.2 12.1 17.9 11.6L14 11.8C12.4 12 11.2 12.4 10.8 13.2Z" fill="#ffcc33"/>
     <circle cx="15.6" cy="8.2" r="4.3" fill="#ffcc33"/>

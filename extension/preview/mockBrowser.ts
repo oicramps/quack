@@ -20,5 +20,9 @@ export const browser = {
     async update(props: { url?: string }) {
       console.log('navigate to', props.url);
     },
+    async sendMessage(tabId: number, message: unknown) {
+      console.log('to tab', tabId, message);
+      return true;
+    },
   },
 };

@@ -29,7 +29,7 @@ async function main(): Promise<void> {
     }
     case 'doctor': {
       const statuses = await Promise.all(Object.values(adapters).map((a) => a.isAvailable()));
-      console.log(JSON.stringify({ version: QUACK_VERSION, config: loadConfig(), backends: statuses }, null, 2));
+      console.log(JSON.stringify({ version: QUACK_VERSION, config: loadConfig(), agents: statuses }, null, 2));
       break;
     }
     case '--version':
@@ -42,7 +42,7 @@ Usage:
   quack-companion install     Register the native messaging host for Chrome, Edge and Chromium
   quack-companion uninstall   Remove the host registration
   quack-companion prune       Remove all Quack worktrees and their refs/pr-review refs
-  quack-companion doctor      Print config and backend readiness
+  quack-companion doctor      Print config and agent readiness
 
 The browser starts the companion itself; you never need to run it in a terminal.`);
   }

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" width="240" height="180" fill="none" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Happy rubber duck">
+  <circle class="backdrop" cx="120" cy="90" r="78" fill="#fff4e6"/>
+  <ellipse cx="122" cy="156" rx="70" ry="8" fill="#0099e5" fill-opacity="0.3"/>
+  <circle cx="40" cy="40" r="4" fill="#ffcc33"/>
+  <circle cx="204" cy="40" r="3" fill="#0099e5"/>
+  <rect x="196" y="120" width="10" height="5" rx="2" fill="#ff980f" transform="rotate(30 201 122)"/>
+  <rect x="30" y="118" width="10" height="5" rx="2" fill="#0099e5" transform="rotate(-25 35 120)"/>
+  <path d="M58 118C58 92 84 84 110 90C122 93 132 96 146 92C164 86 180 80 186 66C194 76 196 98 188 116C178 140 152 152 120 152C84 152 58 140 58 118Z" fill="#ffcc33" stroke="#1c222e" stroke-width="6"/>
+  <path d="M106 114C118 128 144 128 158 114C152 134 116 140 106 114Z" fill="#f5b400" stroke="#1c222e" stroke-width="5"/>
+  <path d="M70 128C70 120 72 114 78 110" stroke="#ffffff" stroke-opacity="0.8" stroke-width="4"/>
+  <path d="M70 69C56 66 46 71 41 78C49 87 62 87 74 82Z" fill="#ff980f" stroke="#1c222e" stroke-width="6"/>
+  <circle cx="98" cy="64" r="30" fill="#ffcc33" stroke="#1c222e" stroke-width="6"/>
+  <path d="M108 42C115 44 120 49 122 56" stroke="#ffffff" stroke-opacity="0.85" stroke-width="4"/>
+  <path d="M90 58Q97 50 104 58" stroke="#1c222e" stroke-width="5"/>
+  <ellipse cx="112" cy="72" rx="6" ry="4" fill="#f9a5b7"/>
+</svg>

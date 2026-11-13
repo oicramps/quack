@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MessageDecoder, encodeMessage } from '../src/framing.ts';
 import { isAllowedOrigin } from '../src/host.ts';
-import { buildFollowUp, buildPrompt } from '../src/prompt.ts';
+import { buildCiPrompt, buildFollowUp, buildPrompt } from '../src/prompt.ts';
 import { parseGitHubRemote } from '../src/repo.ts';
 import { fileAnchor } from '../src/selection.ts';
+import { ciCommentText, parseCiReport } from '@quack/shared';
 import { ValidationError, isSafeRepoPath, validateMessage } from '../src/validate.ts';
 
 test('framing round-trips messages split across chunks', () => {
@@ -40,7 +41,7 @@ test('GitHub remotes in every form map to owner/repo', () => {
 const ask = (overrides: Record<string, unknown> = {}, pr: Record<string, unknown> = {}) => ({
   type: 'ask',
   requestId: 'r1',
-  backend: 'cursor',
+  agent: 'cursor',
   model: '',
   pr: { owner: 'ProjetoParcas', repo: 'mynah', number: 14, ...pr },
   selections: [],
@@ -64,7 +65,7 @@ test('hostile input is rejected before it reaches git', () => {
     ask({}, { headSha: '--upload-pack=evil' }),
     ask({}, { baseRef: '-delete' }),
     ask({}, { baseRef: 'main..evil' }),
-    ask({ backend: 'bash' }),
+    ask({ agent: 'bash' }),
     ask({ model: '--force' }),
     ask({ model: 'a b' }),
     ask({ sessionId: '--force' }),
@@ -105,14 +106,133 @@ test('prompt contains the rules, diff, selection and question', () => {
     assert.ok(p.includes(s), s);
   }
   assert.ok(!buildFollowUp([], '-v').startsWith('-'));
+  assert.ok(!p.includes('Earlier in this conversation'));
+});
+
+test('prompts ask for short answers and code when an alternative is requested', () => {
+  const p = buildPrompt({
+    owner: 'o',
+    repo: 'r',
+    prNumber: 1,
+    title: 'Add date helper',
+    body: '',
+    baseSha: 'a'.repeat(40),
+    headSha: 'b'.repeat(40),
+    diff: '',
+    diffTruncated: false,
+    selections: [],
+    question: 'Is there a cleaner way?',
+  });
+  for (const s of ['as few words as possible', 'Do not narrate', 'fenced code block']) assert.ok(p.includes(s), s);
+  assert.ok(p.lastIndexOf('reply with code') > p.indexOf('# Question'));
+  const f = buildFollowUp([], 'And here?');
+  assert.ok(f.includes('Be brief') && f.includes('code block'));
+});
+
+test('a thread continued on a new agent carries its earlier turns before the question', () => {
+  const p = buildPrompt({
+    owner: 'o',
+    repo: 'r',
+    prNumber: 1,
+    title: 'Add date helper',
+    body: '',
+    baseSha: 'a'.repeat(40),
+    headSha: 'b'.repeat(40),
+    diff: '',
+    diffTruncated: false,
+    selections: [],
+    question: 'And the tests?',
+    history: [{ question: 'Do we already have this?', answer: 'Yes, `formatTimeAgo` in utils/date.ts:112.' }],
+  });
+  const earlier = p.indexOf('# Earlier in this conversation');
+  assert.ok(earlier > 0);
+  assert.ok(p.indexOf('Do we already have this?') > earlier);
+  assert.ok(p.indexOf('formatTimeAgo') > earlier);
+  assert.ok(p.indexOf('# Question\n\nAnd the tests?') > p.indexOf('formatTimeAgo'));
+});
+
+test('ask history is validated and trimmed', () => {
+  const base = { type: 'ask', requestId: 'r1', agent: 'cursor', model: '', pr: { owner: 'o', repo: 'r', number: 1 }, selections: [], question: 'q', sessionId: null };
+  const ok = validateMessage({ ...base, history: [{ question: 'a', answer: 'x'.repeat(20_000) }] });
+  assert.equal(ok.type === 'ask' && ok.history?.[0].answer.length, 8000);
+  assert.equal('history' in validateMessage(base), false);
+  assert.throws(() => validateMessage({ ...base, history: [{ question: 1, answer: '' }] }), ValidationError);
+  assert.throws(() => validateMessage({ ...base, history: Array(11).fill({ question: 'a', answer: 'b' }) }), ValidationError);
+});
+
+test('explain_ci asks and checks requests are validated', () => {
+  const msg = validateMessage(ask({ task: 'explain_ci' }));
+  assert.equal(msg.type === 'ask' && msg.task, 'explain_ci');
+  assert.throws(() => validateMessage(ask({ task: 'labels' })), ValidationError);
+  const checks = validateMessage({ type: 'checks', requestId: 'r1', pr: { owner: 'o', repo: 'r', number: 14 } });
+  assert.equal(checks.type === 'checks' && checks.pr.number, 14);
+  assert.throws(() => validateMessage({ type: 'checks', requestId: 'r1', pr: { owner: 'o', repo: '..', number: 1 } }), ValidationError);
+});
+
+test('a CI prompt asks for a quack-ci block and includes the log tail', () => {
+  const p = buildCiPrompt({
+    owner: 'o',
+    repo: 'r',
+    prNumber: 7,
+    title: 'Let admins delete invoices',
+    body: '',
+    baseSha: 'a'.repeat(40),
+    headSha: 'b'.repeat(40),
+    diff: '+ billing:delete',
+    diffTruncated: false,
+    selections: [],
+    question: 'Explain failing CI',
+    logsUnavailable: false,
+    checks: [
+      {
+        name: 'test / unit',
+        workflow: 'CI',
+        link: 'https://github.com/o/r/actions/runs/1/job/2',
+        log: 'expected 204, got 403',
+        recent: { failed: 1, total: 20, branch: 'main' },
+      },
+    ],
+  });
+  for (const s of ['quack-ci', 'caused_by_pr', 'expected 204, got 403', 'failed 1 of the last 20', 'Explain failing CI']) {
+    assert.ok(p.includes(s), s);
+  }
+  const unavailable = buildCiPrompt({
+    owner: 'o',
+    repo: 'r',
+    prNumber: 7,
+    title: 't',
+    body: '',
+    baseSha: 'a'.repeat(40),
+    headSha: 'b'.repeat(40),
+    diff: '',
+    diffTruncated: false,
+    selections: [],
+    question: 'Explain failing CI',
+    logsUnavailable: true,
+    checks: [],
+  });
+  assert.ok(unavailable.includes('could not be read'));
+});
+
+test('quack-ci blocks become findings, and broken JSON stays markdown', () => {
+  const text = 'One real failure.\n\n```quack-ci\n[{"check":"unit","verdict":"caused_by_pr","summary":"See `a.ts:1`","refs":[{"path":"a.ts","line":1}],"fix":{"path":"a.ts","patch":"+ x"}}]\n```';
+  const report = parseCiReport(text);
+  assert.equal(report.prose, 'One real failure.');
+  assert.equal(report.findings?.[0].verdict, 'caused_by_pr');
+  assert.equal(report.findings?.[0].fix?.patch, '+ x');
+  assert.equal(parseCiReport('One real failure.\n\n```quack-ci\n[{"check":"unit"').pending, true);
+  assert.equal(parseCiReport('no block here').findings, null);
+  assert.equal(parseCiReport('```quack-ci\n{not json}\n```').findings, null);
+  assert.ok(ciCommentText(text).includes('Caused by this PR'));
+  assert.ok(!ciCommentText(text).includes('quack-ci'));
 });
 
 test('close_session messages are validated', () => {
-  assert.deepEqual(validateMessage({ type: 'close_session', requestId: 'r1', backend: 'cursor', sessionId: 'abc-1' }), {
+  assert.deepEqual(validateMessage({ type: 'close_session', requestId: 'r1', agent: 'cursor', sessionId: 'abc-1' }), {
     type: 'close_session',
     requestId: 'r1',
-    backend: 'cursor',
+    agent: 'cursor',
     sessionId: 'abc-1',
   });
-  assert.throws(() => validateMessage({ type: 'close_session', requestId: 'r1', backend: 'cursor', sessionId: '--rm' }), ValidationError);
+  assert.throws(() => validateMessage({ type: 'close_session', requestId: 'r1', agent: 'cursor', sessionId: '--rm' }), ValidationError);
 });

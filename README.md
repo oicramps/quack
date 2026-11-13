@@ -1,47 +1,55 @@
 # Quack
 
-Ask Claude Code or Cursor about a pull request's code from the GitHub PR page, without stashing your work or checking the PR out.
+Ask Claude Code or Cursor about a GitHub pull request directly from the PR page, without stashing local work or switching branches.
 
-A browser extension shows a panel in Chrome's side panel, next to the PR. A local companion, started by the browser on demand, fetches the PR into a separate git worktree at the PR's commit and runs your AI tool there, read-only. Your own checkout is never touched.
+A Manifest V3 browser extension renders a side panel next to the PR. A local native messaging host (`quack-companion`), spawned on demand by the browser, fetches the PR head into an isolated git worktree and runs the selected AI CLI in read-only mode. The working tree and branches of your local clone are never modified.
 
-Status: **Spike**. The panel is intentionally unstyled; see `docs/spike-findings.md`.
+## Workspace Layout
 
-## Layout
+- `extension/`: WXT + React + TypeScript browser extension (Chrome and Edge Manifest V3)
+- `companion/`: Node.js native messaging host, bundled into a single CJS executable with esbuild
+- `shared/`: Protocol types, CI report parser, and constants shared by `extension` and `companion`
+- `docs/architecture.md`: Technical architecture, protocol flow, worktree isolation, and security model
+- `docs/release.md`: Release pipeline for GitHub Releases, Chrome Web Store, and Edge Add-ons
 
-- `extension/`: WXT + React + TypeScript (Manifest V3, Chrome and Edge)
-- `companion/`: Node native messaging host (bundled with esbuild)
-- `shared/`: message protocol types and constants used by both
+## Setup
 
-## Setup (about 5 minutes)
+Requirements: macOS or Linux, Node.js 20+, Yarn 1.22+, git 2.30+, Chrome or Edge, and Cursor CLI (`cursor-agent`) and/or Claude Code (`claude`). GitHub CLI (`gh`) is optional and used for PR metadata and failing CI logs.
 
-Requirements: macOS or Linux, Node 20+, git 2.30+, Chrome or Edge, and the Cursor CLI and/or Claude Code. `gh` is optional but recommended.
-
-1. Install dependencies and build:
-
-   ```sh
-   npm install
-   npm run build
-   ```
-
-2. Register the companion with Chrome, Edge and Chromium:
+1. Install dependencies and build both packages:
 
    ```sh
-   npm run install-host
+   yarn install
+   yarn build
    ```
 
-3. Load the extension: open `chrome://extensions` (or `edge://extensions`), turn on Developer mode, click **Load unpacked** and choose `extension/.output/chrome-mv3`. The extension ID must be `ikkjkdmcnmifldjmajjjgabanjomhikf`; the companion only accepts that ID.
+2. Register the native messaging host for Chrome, Edge, and Chromium:
 
-4. Open any PR on github.com. The panel shows whether the companion is connected and which AI tools are ready, with the commands to fix anything missing.
+   ```sh
+   yarn install-host
+   ```
 
-For development, `npm run dev` rebuilds the extension on change (reload it in `chrome://extensions` afterwards).
+   End users installing from the Chrome Web Store can register the prebuilt companion without cloning the repository:
 
-## Using it
+   ```sh
+   npx quack-companion@latest install
+   ```
 
-- Open the panel by clicking the Quack toolbar icon. It opens in Chrome's side panel and follows the active tab.
-- Ask about the whole PR: type a question in the panel.
-- Ask about specific code: select lines in the diff and press **Cmd/Ctrl+Shift+K** (opens the panel with the selection attached; change it in `chrome://extensions/shortcuts`), or click **Attach selection** in the panel.
-- **Enter** sends, **Shift+Enter** adds a line, **Esc** stops a running answer.
-- Follow-up questions continue the same agent session. Switching backend starts a new thread.
+   *(Or without npm: `curl -fsSL https://github.com/oicramps/quack/releases/latest/download/install.sh | sh`, which downloads `quack-companion.cjs` from the latest GitHub Release, verifies its SHA-256 checksum, installs it to `~/.quack/bin`, and writes the native messaging host manifests.)*
+
+3. Load the unpacked extension: open `chrome://extensions` (or `edge://extensions`), enable **Developer mode**, click **Load unpacked**, and select `extension/.output/chrome-mv3`. Development builds include `EXTENSION_PUBLIC_KEY` so the unpacked extension ID is fixed to `ikkjkdmcnmifldjmajjjgabanjomhikf`.
+
+4. Open any pull request on `github.com`. Click the Quack toolbar icon to open the side panel.
+
+For active development, run `yarn dev` to watch and rebuild the extension.
+
+## Usage
+
+- **Whole-PR questions**: Open the side panel and type a question.
+- **Line selections**: Select code in the PR diff or click line numbers (Shift-click for a range), then press **Cmd/Ctrl+Shift+K** or click the floating **Ask Quack** button.
+- **Failing CI analysis**: When checks fail on the PR and `gh` is authenticated, click **Check CI** in the empty state to inspect failed job logs and compare against recent base-branch runs.
+- **Keyboard shortcuts**: **Enter** sends, **Shift+Enter** inserts a newline, **Esc** cancels an in-flight request.
+- **Multi-turn & agent switching**: Follow-up questions reuse the active agent session. Switching agents mid-thread passes prior turns as conversation context to the new agent.
 
 ## Configuration
 
@@ -57,34 +65,41 @@ For development, `npm run dev` rebuilds the extension on change (reload it in `c
 }
 ```
 
-The companion finds your clone by matching its `origin` remote against the PR's repo, searching `scanRoots` two levels deep. Use `repoPaths` for clones elsewhere.
+The companion locates local clones by matching each repository's `origin` remote URL against the PR's `owner/repo`, scanning `scanRoots` up to two directory levels deep. Explicit paths in `repoPaths` take precedence.
 
-## What it changes in your clone
+## Repository Isolation
 
-Only two things, both outside your working tree and branches:
+The companion only writes to two locations outside your working tree and branches:
 
-- refs under `refs/pr-review/<n>` (the fetched PR heads)
-- worktrees under `~/.quack/worktrees/<owner>/<repo>/pr-<n>`, detached at the PR commit
+- `refs/pr-review/<number>` in the local clone's git object store
+- Detached worktrees under `~/.quack/worktrees/<owner>/<repo>/pr-<number>`
 
-Remove them all with `npm run prune -w companion`.
-
-## Companion commands
+Remove all Quack worktrees and `refs/pr-review/*` refs at any time:
 
 ```sh
-node companion/dist/quack-companion.cjs doctor     # config and backend readiness
-node companion/dist/quack-companion.cjs prune      # remove worktrees and refs/pr-review refs
-node companion/dist/quack-companion.cjs uninstall  # remove the browser registration
-
-# Talk to the companion over native messaging without a browser:
-node companion/scripts/harness.mjs status
-node companion/scripts/harness.mjs ask --pr ProjetoParcas/mynah#14 --backend cursor --question "..."
+yarn workspace quack-companion prune
 ```
 
-Logs (no code, no prompts) are in `~/.quack/logs/companion.log`.
-
-## Tests
+## Companion CLI & Debugging
 
 ```sh
-npm test            # companion unit tests (framing, validation, parsers, cancel)
-npm run typecheck
+node companion/dist/quack-companion.cjs doctor     # Print config and agent availability
+node companion/dist/quack-companion.cjs prune      # Remove all Quack worktrees and refs/pr-review/* refs
+node companion/dist/quack-companion.cjs uninstall  # Remove native messaging manifests and ~/.quack/bin
+
+# Exercise the native messaging host directly over stdio without a browser:
+node companion/scripts/harness.mjs status
+node companion/scripts/harness.mjs ask --pr owner/repo#14 --agent cursor --question "..."
+
+# Record raw agent stream output to ~/.quack/recordings/ for parser test fixtures:
+QUACK_RECORD=1 node companion/scripts/harness.mjs ask --pr owner/repo#14 --agent claude-code --question "..."
+```
+
+Diagnostic logs (containing timing and errors, never code or prompts) are written to `~/.quack/logs/companion.log`.
+
+## Testing & Verification
+
+```sh
+yarn test       # Run companion unit tests (framing, validation, parsers, stream lifecycle, CI checks)
+yarn typecheck  # Type-check companion and extension workspaces
 ```

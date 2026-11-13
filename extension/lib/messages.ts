@@ -10,12 +10,16 @@ export type FromBackground =
   | { kind: 'disconnected'; error: string; requestIds: string[] };
 
 /** Sent to a GitHub tab's content script with tabs.sendMessage. */
-export type TabRequest = { kind: 'get-context' } | { kind: 'get-selection' };
+export type TabRequest =
+  | { kind: 'get-context' }
+  | { kind: 'get-selection' }
+  /** Opens GitHub's comment box for these lines, or the conversation's box when null. */
+  | { kind: 'open-comment'; selection: CodeSelection | null };
 
 /** One-off runtime messages between the content script, background and side panel. */
 export type RuntimeMessage =
   | { kind: 'page-context'; context: PageContext }
   | { kind: 'attach'; tabId: number; selection: CodeSelection | null }
   | { kind: 'panel-ready' }
-  /** The in-page "Ask AI" button was clicked; opens the side panel with the selection. */
+  /** The in-page "Ask Quack" button was clicked; opens the side panel with the selection. */
   | { kind: 'ask-selection'; selection: CodeSelection };

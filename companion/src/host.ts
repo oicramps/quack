@@ -1,28 +1,28 @@
-import type { BackendId, BackendStatus, CompanionMessage, ExtensionMessage } from '@quack/shared';
-import { EXTENSION_ID, QUACK_VERSION } from '@quack/shared';
+import type { AgentId, AgentStatus, CompanionMessage, ExtensionMessage } from '@quack/shared';
+import { ALLOWED_EXTENSION_IDS, PROTOCOL_VERSION, QUACK_VERSION } from '@quack/shared';
 import { adapters } from './adapters/index.ts';
-import { loadConfig } from './config.ts';
+import { listFailingChecks } from './checks.ts';
 import { MessageDecoder, encodeMessage } from './framing.ts';
 import { log } from './log.ts';
 import { handleAsk } from './session.ts';
 import { ValidationError, validateMessage } from './validate.ts';
-import { clearStaleLocks } from './worktree.ts';
 
 const STATUS_TTL_MS = 60_000;
-// Chrome caps host-to-browser messages at 1 MB; keep text events far below it.
+// Chrome limits host-to-extension native messages to 1 MB; chunk large text deltas to 64 KB.
 const MAX_TEXT_DELTA = 64 * 1024;
 
+/** Checks whether the caller's `chrome-extension://<id>/` origin is allowlisted. */
 export function isAllowedOrigin(origin: string | undefined): boolean {
-  return origin === `chrome-extension://${EXTENSION_ID}/`;
+  return ALLOWED_EXTENSION_IDS.some((id) => origin === `chrome-extension://${id}/`);
 }
 
+/** Runs the Chrome Native Messaging stdio event loop for an allowlisted extension origin. */
 export function startHost(origin: string | undefined): void {
   if (!isAllowedOrigin(origin)) {
     log('rejected caller origin', String(origin));
     process.exit(1);
   }
   log('host started', QUACK_VERSION);
-  clearStaleLocks(loadConfig());
 
   const send = (message: CompanionMessage) => {
     if (message.type === 'event' && message.event.type === 'text' && message.event.delta.length > MAX_TEXT_DELTA) {
@@ -35,15 +35,15 @@ export function startHost(origin: string | undefined): void {
     process.stdout.write(encodeMessage(message));
   };
 
-  const statusCache = new Map<BackendId, { at: number; status: BackendStatus }>();
-  const refreshStatus = async (id: BackendId): Promise<BackendStatus> => {
+  const statusCache = new Map<AgentId, { at: number; status: AgentStatus }>();
+  const refreshStatus = async (id: AgentId): Promise<AgentStatus> => {
     const status = await adapters[id].isAvailable();
     statusCache.set(id, { at: Date.now(), status });
     return status;
   };
-  // A backend that was ready stays usable while it is re-checked in the
-  // background; if it has since broken, the agent run reports the error.
-  const cachedStatus = async (id: BackendId): Promise<BackendStatus> => {
+  // Stale-while-revalidate: return cached 'ready' status immediately and refresh
+  // in the background after STATUS_TTL_MS. Non-ready states always re-check.
+  const cachedStatus = async (id: AgentId): Promise<AgentStatus> => {
     const hit = statusCache.get(id);
     if (hit?.status.state !== 'ready') return refreshStatus(id);
     if (Date.now() - hit.at >= STATUS_TTL_MS) {
@@ -58,15 +58,17 @@ export function startHost(origin: string | undefined): void {
   const handle = (message: ExtensionMessage) => {
     switch (message.type) {
       case 'status': {
-        // Answer at once so the panel knows the companion is up, then again as each backend is checked.
-        const ids = Object.keys(adapters) as BackendId[];
-        const done = new Map<BackendId, BackendStatus>();
+        // Emit an immediate status response so the extension detects the host,
+        // then emit incremental updates as each agent probe completes.
+        const ids = Object.keys(adapters) as AgentId[];
+        const done = new Map<AgentId, AgentStatus>();
         const report = () =>
           send({
             type: 'status',
             requestId: message.requestId,
             version: QUACK_VERSION,
-            backends: ids.flatMap((id) => done.get(id) ?? []),
+            protocol: PROTOCOL_VERSION,
+            agents: ids.flatMap((id) => done.get(id) ?? []),
             pending: ids.filter((id) => !done.has(id)),
           });
         report();
@@ -82,7 +84,15 @@ export function startHost(origin: string | undefined): void {
         running.get(message.requestId)?.abort();
         break;
       case 'close_session':
-        adapters[message.backend].closeSession?.(message.sessionId);
+        adapters[message.agent].closeSession?.(message.sessionId);
+        break;
+      case 'checks':
+        listFailingChecks(message.pr)
+          .then((result) => send({ type: 'checks', requestId: message.requestId, ...result }))
+          .catch((err) => {
+            log('checks failed', String(err));
+            send({ type: 'checks', requestId: message.requestId, failing: [], available: false });
+          });
         break;
       case 'ask': {
         const controller = new AbortController();
@@ -115,7 +125,7 @@ export function startHost(origin: string | undefined): void {
     }
   });
 
-  // The browser closed the port: stop every agent so none outlives the panel.
+  // When the browser closes the native port, abort in-flight requests and terminate agent processes.
   process.stdin.on('end', () => {
     log('port closed, stopping', running.size, 'request(s)');
     for (const c of running.values()) c.abort();

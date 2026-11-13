@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import type { AgentEvent, BackendStatus, CompanionMessage, ExtensionMessage, ProgressStep } from '@quack/shared';
-import { QUACK_VERSION } from '@quack/shared';
+import type { AgentEvent, AgentStatus, CompanionMessage, ExtensionMessage, ProgressStep } from '@quack/shared';
+import { PROTOCOL_VERSION, QUACK_VERSION } from '@quack/shared';
 import '../components/panel.css';
 import { Panel } from '../components/Panel';
 import type { CompanionClient } from '../lib/client';
@@ -12,13 +12,17 @@ const scenario = params.get('scenario') ?? 'done';
 document.body.dataset.theme = params.get('theme') === 'dark' ? 'dark' : 'light';
 
 const SHA = '44b360d9c1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6';
+const NEWER_SHA = '7be03f1a2b3c4d5e6f708192a3b4c5d6e7f80912';
+/** Scenarios that start from a finished answer, then act on it. */
+const AFTER_DONE = ['stale', 'draft', 'posted', 'switch'];
+const bothReady = ['error-timeout', 'switch'].includes(scenario);
 
-const backends: BackendStatus[] = [
+const agents: AgentStatus[] = [
   { id: 'cursor', label: 'Cursor', state: 'ready', version: '2025.08.15', models: ['', 'auto', 'gpt-5', 'sonnet-4', 'sonnet-4-thinking'], fixSteps: [] },
   {
     id: 'claude-code',
     label: 'Claude Code',
-    state: 'not_installed',
+    state: bothReady ? 'ready' : 'not_installed',
     models: ['sonnet', 'opus', 'haiku'],
     fixSteps: [
       { text: 'Install Claude Code', command: 'curl -fsSL https://claude.ai/install.sh | bash' },
@@ -69,6 +73,39 @@ const progress = (step: ProgressStep, at: number, detail?: string) => ({
 });
 const event = (ev: AgentEvent, at: number) => ({ at, msg: (requestId: string): CompanionMessage => ({ type: 'event', requestId, event: ev }) });
 const PREP = [progress('finding_repo', 10), progress('fetching_pr', 60), progress('preparing_worktree', 900, SHA), progress('starting_agent', 1000, 'Cursor')];
+const CI_PREP = [progress('finding_repo', 10), progress('fetching_pr', 60), progress('preparing_worktree', 900, SHA), progress('fetching_ci', 950), progress('starting_agent', 1000, 'Cursor')];
+const FAILING_CHECKS = [
+  { name: 'test / unit (node 20)', workflow: 'CI', link: 'https://github.com/ProjetoParcas/mynah/actions/runs/100/job/200', runId: '100', jobId: '200' },
+  { name: 'e2e / billing', workflow: 'CI', link: 'https://github.com/ProjetoParcas/mynah/actions/runs/100/job/201', runId: '100', jobId: '201' },
+];
+const CI_FINDINGS = [
+  {
+    check: 'test / unit (node 20)',
+    verdict: 'caused_by_pr',
+    summary:
+      '`DELETE /invoices/:id` expected **204**, got **403**. The new `billing:delete` permission at `src/auth/permissions.ts:42` isn’t in the admin fixture at `test/fixtures/roles.ts:18`.',
+    refs: [
+      { path: 'src/auth/permissions.ts', line: 42 },
+      { path: 'test/fixtures/roles.ts', line: 18 },
+    ],
+    fix: {
+      path: 'test/fixtures/roles.ts',
+      patch: "// test/fixtures/roles.ts\nadmin: [\n  'billing:read',\n  'billing:write',\n+ 'billing:delete',\n],",
+    },
+  },
+  {
+    check: 'e2e / billing',
+    verdict: 'flaky',
+    summary: 'Timed out waiting for the PDF preview. Same step failed in 3 of the last 20 runs on `main`; nothing in this diff touches it.',
+    refs: [],
+  },
+];
+const CI_ANSWER = `**One real failure, one flake.** The unit test broke because of this PR; the e2e job has been wobbly on main all week.
+
+\`\`\`quack-ci
+${JSON.stringify(CI_FINDINGS, null, 2)}
+\`\`\`
+`;
 const TOOLS = [
   event({ type: 'tool', summary: 'Searched repo for enableMinifyInReleaseBuilds' }, 1200),
   event({ type: 'tool', summary: 'Read mobile/app.config.ts' }, 1300),
@@ -88,7 +125,19 @@ const scripts: Record<string, Script> = {
     ...TOOLS.slice(0, 2),
     event({ type: 'error', code: 'timeout', message: 'No response for 5 min while reading the repo. The worktree is fine; retrying usually works.' }, 1700),
   ],
+  'explain-ci': [
+    ...CI_PREP,
+    progress('thinking', 1100),
+    ...chunks(CI_ANSWER, 1200),
+    event({ type: 'done', sessionId: 's1', headSha: SHA, model: 'sonnet' }, 2200),
+  ],
+  'error-timeout': [
+    ...PREP,
+    ...TOOLS.slice(0, 2),
+    event({ type: 'error', code: 'timeout', message: 'Cursor timed out reading the repo. Retrying usually works.' }, 1700),
+  ],
 };
+for (const s of AFTER_DONE) scripts[s] = scripts.done;
 
 class FakeClient {
   private disconnect = new Set<(error: string, ids: string[]) => void>();
@@ -98,11 +147,14 @@ class FakeClient {
       return;
     }
     if (message.type === 'status') {
-      const reply = (list: BackendStatus[], pending: BackendStatus['id'][]) =>
-        listener?.({ type: 'status', requestId: message.requestId, version: QUACK_VERSION, backends: list, pending });
+      const reply = (list: AgentStatus[], pending: AgentStatus['id'][]) =>
+        listener?.({ type: 'status', requestId: message.requestId, version: QUACK_VERSION, protocol: PROTOCOL_VERSION, agents: list, pending });
       setTimeout(() => reply([], ['cursor', 'claude-code']), 10);
       // "loading" stays on the companion's first, partial answer.
-      if (scenario !== 'loading') setTimeout(() => reply(backends, []), 20);
+      if (scenario !== 'loading') setTimeout(() => reply(agents, []), 20);
+    } else if (message.type === 'checks') {
+      const show = scenario === 'empty-ci' || scenario === 'explain-ci';
+      listener?.({ type: 'checks', requestId: message.requestId, available: true, failing: show ? FAILING_CHECKS : [] });
     } else if (message.type === 'ask') {
       for (const step of scripts[scenario] ?? []) {
         setTimeout(() => {
@@ -122,7 +174,7 @@ class FakeClient {
 }
 
 seedStorage({
-  'quack.prefs': { backend: scenario === 'not-installed' ? 'claude-code' : 'cursor', models: { cursor: 'auto' } },
+  'quack.prefs': { agent: scenario === 'not-installed' ? 'claude-code' : 'cursor', models: { cursor: 'auto', 'claude-code': 'sonnet' } },
   'quack.recent': [
     { owner: 'ProjetoParcas', repo: 'mynah', number: 14, title: 'Local release APK build with release optimizations', questions: 2, at: Date.now() - 3_600_000 },
     { owner: 'ProjetoParcas', repo: 'mynah', number: 11, title: 'Move settings page to the new form API', questions: 4, at: Date.now() - 26 * 3_600_000 },
@@ -131,8 +183,9 @@ seedStorage({
 });
 
 const selection = { path: 'mobile/plugins/withReleaseOptimizations.js', startLine: 15, endLine: 30, side: 'new' as const };
-const noSelection = ['empty', 'loading'].includes(scenario);
+const noSelection = ['empty', 'empty-ci', 'explain-ci', 'loading'].includes(scenario);
 const page: PanelPage = {
+  tabId: 1,
   pr:
     scenario === 'no-pr'
       ? null
@@ -144,6 +197,7 @@ const page: PanelPage = {
           baseRef: 'main',
           headRef: 'cursor/local-release-apk',
           headSha: SHA,
+          latestSha: scenario === 'stale' ? NEWER_SHA : SHA,
           commits: 3,
           files: 2,
           additions: 25,
@@ -151,8 +205,11 @@ const page: PanelPage = {
         },
   lastSelection: noSelection ? null : selection,
   theme: document.body.dataset.theme as 'light' | 'dark',
-  attachRequest: { seq: ['selection', 'preparing', 'streaming', 'done', 'error'].includes(scenario) ? 1 : 0, selection },
+  attachRequest: { seq: scenario === 'selection' || (Boolean(scripts[scenario]) && scenario !== 'explain-ci') ? 1 : 0, selection },
 };
+
+// The preview isn't focused when screenshotted, so the real clipboard would refuse.
+Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => console.log('copied', text.length) } });
 
 createRoot(document.getElementById('root')!).render(<Panel page={page} client={new FakeClient() as unknown as CompanionClient} />);
 
@@ -171,7 +228,24 @@ async function type(text: string, send: boolean) {
 (async () => {
   await wait(150);
   if (scenario === 'selection') await type('Does this duplicate anything we already have?', false);
-  if (scripts[scenario]) await type('Does this duplicate anything we already have?', true);
-  if (scenario === 'backend-menu') document.querySelector<HTMLButtonElement>('[aria-label="AI backend"]')?.click();
+  if (scenario === 'explain-ci') {
+    await wait(400);
+    [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Check CI')?.click();
+  } else if (scripts[scenario]) await type('Does this duplicate anything we already have?', true);
+  const click = (text: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim().startsWith(text))?.click();
+  if (AFTER_DONE.includes(scenario)) await wait(2600);
+  if (scenario === 'draft' || scenario === 'posted') click('Post as review comment');
+  if (scenario === 'posted') {
+    await wait(50);
+    click('Copy and open in GitHub');
+  }
+  if (scenario === 'switch') {
+    document.querySelector<HTMLButtonElement>('[aria-label="Agent"]')?.click();
+    await wait(50);
+    click('Claude Code');
+    await type('And are the tests covering it?', true);
+  }
+  if (scenario === 'agent-menu') document.querySelector<HTMLButtonElement>('[aria-label="Agent"]')?.click();
   if (scenario === 'model-menu') document.querySelector<HTMLButtonElement>('[aria-label="Model"]')?.click();
 })();

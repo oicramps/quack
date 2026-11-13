@@ -19,6 +19,7 @@ interface GhPr {
   body: string;
 }
 
+/** Queries PR metadata via `gh pr view`. Returns null when `gh` is missing or unauthenticated. */
 async function viaGh(pr: PrRef): Promise<GhPr | null> {
   const gh = findBinary(['gh']);
   if (!gh) return null;
@@ -38,6 +39,7 @@ async function viaGh(pr: PrRef): Promise<GhPr | null> {
   }
 }
 
+/** Fetches `refs/heads/<baseRef>` from origin and computes the merge-base with `headSha`. */
 async function mergeBase(clone: string, baseRef: string, headSha: string): Promise<string> {
   if (!isSafeBranch(baseRef)) throw new Error('invalid base branch name');
   const fetch = await run('git', ['-C', clone, 'fetch', '--no-tags', '--quiet', 'origin', `refs/heads/${baseRef}`], {
@@ -50,8 +52,8 @@ async function mergeBase(clone: string, baseRef: string, headSha: string): Promi
 }
 
 /**
- * Fetches the PR and resolves its commits. The head is the commit the page shows
- * when it shows one, otherwise the PR's latest head.
+ * Fetches the PR and resolves its base and head commits. Uses `pr.headSha` when
+ * the user is viewing a specific commit; otherwise uses the latest PR head.
  */
 export async function resolvePr(clone: string, pr: PrRef): Promise<PrContext> {
   const fetchedHead = await fetchPr(clone, pr.number);
@@ -85,6 +87,7 @@ export async function resolvePr(clone: string, pr: PrRef): Promise<PrContext> {
 
 const MAX_DIFF_CHARS = 120_000;
 
+/** Computes `git diff baseSha...headSha`, truncated to `MAX_DIFF_CHARS`. */
 export async function prDiff(clone: string, baseSha: string, headSha: string): Promise<{ diff: string; truncated: boolean }> {
   const res = await run('git', ['-C', clone, 'diff', '--no-color', `${baseSha}...${headSha}`], {
     timeoutMs: 60_000,

@@ -1,16 +1,19 @@
-export type BackendId = 'cursor' | 'claude-code';
+export type AgentId = 'cursor' | 'claude-code';
 
-export type BackendState = 'ready' | 'not_logged_in' | 'not_installed';
+export type AgentState = 'ready' | 'not_logged_in' | 'not_installed';
 
 /** `thinking`: the agent is running and working on the answer, before any output. */
-export type ProgressStep = 'finding_repo' | 'fetching_pr' | 'preparing_worktree' | 'starting_agent' | 'thinking';
+export type ProgressStep = 'finding_repo' | 'fetching_pr' | 'preparing_worktree' | 'fetching_ci' | 'starting_agent' | 'thinking';
+
+/** Set on an ask that should explain failing checks instead of answering free text. */
+export type AskTask = 'explain_ci';
 
 export type ErrorCode =
   | 'bad_request'
   | 'repo_not_found'
   | 'fetch_failed'
-  | 'backend_not_installed'
-  | 'backend_not_logged_in'
+  | 'agent_not_installed'
+  | 'agent_not_logged_in'
   | 'timeout'
   | 'cancelled'
   | 'agent_failed'
@@ -21,16 +24,14 @@ export interface FixStep {
   command?: string;
 }
 
-export interface BackendStatus {
-  id: BackendId;
+export interface AgentStatus {
+  id: AgentId;
   label: string;
-  state: BackendState;
+  state: AgentState;
   version?: string;
   /** Empty string means "let the tool pick its default model". */
   models: string[];
   fixSteps: FixStep[];
-  /** Non-blocking advice, e.g. an outdated CLI that still works. */
-  hint?: string;
 }
 
 export interface PrRef {
@@ -65,12 +66,20 @@ export interface StatusRequest {
 export interface AskRequest {
   type: 'ask';
   requestId: string;
-  backend: BackendId;
+  agent: AgentId;
   model: string;
   pr: PrRef;
   selections: CodeSelection[];
   question: string;
   sessionId: string | null;
+  /** Earlier turns of the thread, sent when it continues on a new agent session (e.g. after switching agents). */
+  history?: HistoryTurn[];
+  task?: AskTask;
+}
+
+export interface HistoryTurn {
+  question: string;
+  answer: string;
 }
 
 export interface CancelRequest {
@@ -78,15 +87,30 @@ export interface CancelRequest {
   requestId: string;
 }
 
+/** A check that is failing on the pull request. `link` opens the job on GitHub. */
+export interface CheckRun {
+  name: string;
+  workflow: string;
+  link: string;
+  runId?: string;
+  jobId?: string;
+}
+
+export interface ChecksRequest {
+  type: 'checks';
+  requestId: string;
+  pr: PrRef;
+}
+
 /** The thread is over: the companion can stop the agent process kept open for it. No reply. */
 export interface CloseSessionRequest {
   type: 'close_session';
   requestId: string;
-  backend: BackendId;
+  agent: AgentId;
   sessionId: string;
 }
 
-export type ExtensionMessage = StatusRequest | AskRequest | CancelRequest | CloseSessionRequest;
+export type ExtensionMessage = StatusRequest | AskRequest | CancelRequest | CloseSessionRequest | ChecksRequest;
 
 // Companion -> extension
 
@@ -100,10 +124,20 @@ export interface StatusResponse {
   type: 'status';
   requestId: string;
   version: string;
-  /** The backends checked so far. */
-  backends: BackendStatus[];
-  /** Backends still being checked. A further status message follows until this is empty or absent. */
-  pending?: BackendId[];
+  /** PROTOCOL_VERSION of this companion. Missing on companions from before it existed. */
+  protocol?: number;
+  /** The agents checked so far. */
+  agents: AgentStatus[];
+  /** Agents still being checked. A further status message follows until this is empty or absent. */
+  pending?: AgentId[];
+}
+
+export interface ChecksResponse {
+  type: 'checks';
+  requestId: string;
+  failing: CheckRun[];
+  /** False when gh is missing or not logged in. The panel then hides the CI row. */
+  available: boolean;
 }
 
 export interface ProgressMessage {
@@ -119,12 +153,13 @@ export interface EventMessage {
   event: AgentEvent;
 }
 
-export type CompanionMessage = StatusResponse | ProgressMessage | EventMessage;
+export type CompanionMessage = StatusResponse | ProgressMessage | EventMessage | ChecksResponse;
 
 export const PROGRESS_LABELS: Record<ProgressStep, string> = {
   finding_repo: 'Finding local clone',
   fetching_pr: 'Fetching PR',
   preparing_worktree: 'Preparing worktree',
+  fetching_ci: 'Fetching CI logs',
   starting_agent: 'Starting agent',
   thinking: 'Thinking',
 };

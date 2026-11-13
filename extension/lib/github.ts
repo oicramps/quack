@@ -59,12 +59,27 @@ export function readPrStats(): PrStats {
   };
 }
 
+/**
+ * The PR's latest head commit, from the JSON GitHub embeds in the page
+ * ("headSha" in the React UI, "head_sha"/data attributes in the classic one).
+ * Falls back to the commit pinned in the URL.
+ */
+export function readHeadSha(): string | undefined {
+  for (const el of document.querySelectorAll('script[type="application/json"], react-app script, [data-target="react-app.embeddedData"]')) {
+    const m = el.textContent?.match(/"headSha"\s*:\s*"([0-9a-f]{40})"/);
+    if (m) return m[1];
+  }
+  const attr = document.querySelector('[data-head-sha], input[name="head_sha"], input[name="commit_id"]');
+  const value = attr?.getAttribute('data-head-sha') ?? (attr as HTMLInputElement | null)?.value;
+  if (value && /^[0-9a-f]{40}$/.test(value)) return value;
+  return parsePrUrl(location.href)?.headSha;
+}
+
 export function prKey(pr: Pick<PrRef, 'owner' | 'repo' | 'number'>): string {
   return `${pr.owner}/${pr.repo}#${pr.number}`.toLowerCase();
 }
 
-// GitHub has shipped two diff UIs (the classic table and the newer React one),
-// so file paths and line numbers are read with several fallbacks.
+// GitHub serves both classic table diffs and React diffs; selectors below cover both DOM structures.
 
 const PATH_ATTRS = ['data-tagsearch-path', 'data-path', 'data-file-path'];
 
@@ -72,6 +87,7 @@ function elementOf(node: Node): Element | null {
   return node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
 }
 
+/** Walks up the DOM from `el` to resolve the repository-relative file path for a diff block. */
 function filePathFor(el: Element | null): string | undefined {
   for (let cur = el, depth = 0; cur && depth < 30; cur = cur.parentElement, depth++) {
     for (const attr of PATH_ATTRS) {
@@ -95,6 +111,7 @@ function filePathFor(el: Element | null): string | undefined {
   return undefined;
 }
 
+/** Extracts the diff line number from the row containing `el`, preferring the new (right) side. */
 export function lineNumberFor(el: Element | null): number | undefined {
   const row = el?.closest('tr, [role="row"]');
   if (!row) return undefined;
@@ -222,10 +239,48 @@ export function lineElementFor(s: CodeSelection, line: number): Element | null {
   return s.side === 'old' ? byX[0] : byX[byX.length - 1];
 }
 
+/**
+ * Puts GitHub's comment box for `s` on screen: highlights the lines through
+ * the URL hash, then clicks that line's "add comment" button when the diff
+ * has one. Without lines, focuses the conversation's comment box.
+ * Returns whether a comment box was found.
+ */
+export function openCommentFor(s: CodeSelection | null): boolean {
+  if (!s?.fileAnchor || !s.startLine) {
+    const box = document.querySelector<HTMLTextAreaElement>('#new_comment_field, textarea[name="comment[body]"], [data-testid="markdown-editor-input"]');
+    box?.scrollIntoView({ block: 'center' });
+    box?.focus();
+    return !!box;
+  }
+  const letter = s.side === 'old' ? 'L' : 'R';
+  const end = s.endLine && s.endLine !== s.startLine ? `-${letter}${s.endLine}` : '';
+  location.hash = `diff-${s.fileAnchor}${letter}${s.startLine}${end}`;
+  const line = lineElementFor(s, s.endLine ?? s.startLine);
+  const row = line?.closest('tr, [role="row"]') ?? line;
+  row?.scrollIntoView({ block: 'center' });
+  const button = row?.querySelector<HTMLElement>(
+    'button.js-add-line-comment, button.add-line-comment, button[aria-label*="comment" i], [data-testid*="add-comment" i]',
+  );
+  button?.click();
+  return !!button;
+}
+
 export function selectionLabel(s: CodeSelection): string {
   const lines = s.startLine ? ` · L${s.startLine}${s.endLine && s.endLine !== s.startLine ? `–${s.endLine}` : ''}` : '';
   const name = s.path ?? (s.fileAnchor ? 'Selected lines' : 'Selected code');
   return `${name}${lines}${s.side === 'old' ? ' (old)' : ''}`;
+}
+
+/** Folder (muted), file name, and the line-range pill for a composer chip. */
+export function selectionChip(s: CodeSelection): { dir: string; name: string; lines: string } {
+  const full = s.path ?? (s.fileAnchor ? 'Selected lines' : 'Selected code');
+  const slash = full.lastIndexOf('/');
+  const range = s.startLine ? `L${s.startLine}${s.endLine && s.endLine !== s.startLine ? `–${s.endLine}` : ''}` : '';
+  return {
+    dir: slash >= 0 ? full.slice(0, slash + 1) : '',
+    name: slash >= 0 ? full.slice(slash + 1) : full,
+    lines: range ? `${range}${s.side === 'old' ? ' old' : ''}` : '',
+  };
 }
 
 export function githubTheme(): 'light' | 'dark' {

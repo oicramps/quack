@@ -1,6 +1,6 @@
 {
   "name": "@quack/extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,13 +8,13 @@
     "dev:edge": "wxt -b edge",
     "build": "wxt build",
     "build:edge": "wxt build -b edge",
-    "zip": "wxt zip",
+    "zip": "QUACK_STORE=1 wxt zip",
     "preview": "vite --config preview/vite.config.ts",
     "icons": "mkdir -p public/icon && for s in 16 32 48 128; do rsvg-convert -w $s -h $s assets/icon.svg -o public/icon/$s.png; done",
     "typecheck": "wxt prepare && tsc --noEmit"
   },
   "dependencies": {
-    "@quack/shared": "0.1.0",
+    "@quack/shared": "0.2.0",
     "highlight.js": "^11.12.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

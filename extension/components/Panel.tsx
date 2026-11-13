@@ -1,48 +1,34 @@
 import { type ReactNode, memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import type {
-  BackendId,
-  BackendStatus,
+  AgentId,
+  AgentStatus,
+  CheckRun,
   CodeSelection,
   CompanionMessage,
   ErrorCode,
   FixStep,
+  HistoryTurn,
   ProgressStep,
 } from '@quack/shared';
-import { QUACK_VERSION } from '@quack/shared';
+import { INSTALL_COMMAND, PROTOCOL_VERSION, ciCommentText, parseCiReport } from '@quack/shared';
 import { type CompanionClient, newRequestId } from '../lib/client';
-import { prKey, selectionLabel } from '../lib/github';
+import { prKey, selectionChip, selectionLabel } from '../lib/github';
 import type { PanelPage } from '../lib/page';
-import { BackendPicker, ModelPicker, StatusDot, backendLabel, modelLabel } from './BackendPicker';
+import type { TabRequest } from '../lib/messages';
+import { AgentPicker, ModelPicker, StatusDot, agentLabel, modelLabel } from './AgentPicker';
+import { AnswerBody } from './CiReport';
+import { DuckError, DuckSuccess, QuackLogo, StatusIcon } from './brand';
 import { CommandBlock, FixSteps } from './FixSteps';
-import {
-  ArrowUp,
-  Check,
-  ChevronRight,
-  Circle,
-  Close,
-  CollapsePanel,
-  ErrorCircle,
-  ExternalArrow,
-  FileIcon,
-  Lines,
-  Plus,
-  QuackMark,
-  Retry,
-  Search,
-  Spinner,
-  StopSquare,
-  Summary,
-  Terminal,
-  Warning,
-} from './icons';
-import { Markdown, type RepoLink } from './Markdown';
+import { ArrowUp, ChevronRight, Circle, Close, CollapsePanel, FileIcon, Plus, Retry, Search, StopSquare, Terminal, Warning } from './icons';
+import type { RepoLink } from './Markdown';
+import { type Phase, ROTATE_MS, messagesFor, nextMessage, pickPhase } from './thinking';
 
 interface Turn {
   id: string;
   question: string;
   selections: CodeSelection[];
-  backend: BackendId;
+  agent: AgentId;
   model: string;
   steps: { step: ProgressStep; at: number; detail?: string }[];
   activity: string[];
@@ -54,10 +40,12 @@ interface Turn {
   finishedAt?: number;
   /** First question of the thread, which also creates or refreshes the worktree. */
   first: boolean;
+  /** Set for the Check CI action, which asks the agent to explain failing checks. */
+  task?: 'explain_ci';
 }
 
 interface Thread {
-  backend: BackendId;
+  agent: AgentId;
   sessionId: string | null;
   turns: Turn[];
 }
@@ -66,13 +54,15 @@ type Action =
   | { type: 'start'; key: string; turn: Turn }
   | { type: 'update'; key: string; id: string; patch: (t: Turn) => Partial<Turn> }
   | { type: 'session'; key: string; sessionId: string | null }
-  | { type: 'reset'; key: string; backend: BackendId };
+  | { type: 'reset'; key: string; agent: AgentId }
+  /** Another agent continues the thread: same turns, new session. */
+  | { type: 'switch'; key: string; agent: AgentId };
 
 function threadsReducer(state: Record<string, Thread>, action: Action): Record<string, Thread> {
   const thread = state[action.key];
   switch (action.type) {
     case 'start': {
-      const base = thread ?? { backend: action.turn.backend, sessionId: null, turns: [] };
+      const base = thread ?? { agent: action.turn.agent, sessionId: null, turns: [] };
       return { ...state, [action.key]: { ...base, turns: [...base.turns, action.turn] } };
     }
     case 'update':
@@ -85,16 +75,24 @@ function threadsReducer(state: Record<string, Thread>, action: Action): Record<s
       if (!thread) return state;
       return { ...state, [action.key]: { ...thread, sessionId: action.sessionId } };
     case 'reset':
-      return { ...state, [action.key]: { backend: action.backend, sessionId: null, turns: [] } };
+      return { ...state, [action.key]: { agent: action.agent, sessionId: null, turns: [] } };
+    case 'switch':
+      if (!thread) return state;
+      return { ...state, [action.key]: { ...thread, agent: action.agent, sessionId: null } };
   }
 }
 
-type Connection = { state: 'checking' } | { state: 'connected'; version: string } | { state: 'disconnected'; error: string };
+type Connection =
+  | { state: 'checking' }
+  | { state: 'connected'; version: string; protocol: number }
+  | { state: 'disconnected'; error: string };
+
+const EXPLAIN_CI = 'Explain failing CI';
 
 interface Prefs {
-  backend: BackendId;
-  models: Partial<Record<BackendId, string>>;
-  recentModels?: Partial<Record<BackendId, string[]>>;
+  agent: AgentId;
+  models: Partial<Record<AgentId, string>>;
+  recentModels?: Partial<Record<AgentId, string[]>>;
 }
 
 /** A PR the user asked about, listed on the panel's start screen. */
@@ -111,8 +109,10 @@ const PREFS_KEY = 'quack.prefs';
 const RECENT_KEY = 'quack.recent';
 const MAX_RECENT = 5;
 const REVIEW_REQUESTS_URL = 'https://github.com/pulls/review-requested';
-const INSTALL_COMMAND = 'cd ~/Documents/Dev/Projects/quack && npm run install-host';
 const SHORTCUT = /Mac/.test(navigator.platform) ? '⌘⇧K' : 'Ctrl+Shift+K';
+/** Earlier turns sent to an agent that joins a thread, newest last. */
+const MAX_HISTORY = 5;
+const MAX_HISTORY_ANSWER = 4000;
 
 const sameSelection = (a: CodeSelection, b: CodeSelection) =>
   a.path === b.path && a.fileAnchor === b.fileAnchor && a.side === b.side && a.startLine === b.startLine && a.endLine === b.endLine;
@@ -149,41 +149,61 @@ function timeAgo(at: number, now = Date.now()): string {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
+const lineCount = (s: CodeSelection) => (s.startLine ? (s.endLine ?? s.startLine) - s.startLine + 1 : 0);
+const linesOf = (s: CodeSelection) => (s.startLine ? `L${s.startLine}${s.endLine && s.endLine !== s.startLine ? `–${s.endLine}` : ''}` : '');
+
+function historyOf(turns: Turn[]): HistoryTurn[] {
+  return turns
+    .filter((t) => t.status === 'done' && t.text.trim())
+    .slice(-MAX_HISTORY)
+    .map((t) => ({
+      question: t.question,
+      answer: t.text.length > MAX_HISTORY_ANSWER ? `${t.text.slice(0, MAX_HISTORY_ANSWER)}\n[…]` : t.text,
+    }));
+}
+
+type Tone = 'ok' | 'warn' | 'err' | 'idle' | 'busy';
+
 export function Panel({ page, client }: { page: PanelPage; client: CompanionClient }) {
   const pr = page.pr;
   const key = pr ? prKey(pr) : '';
 
   const [connection, setConnection] = useState<Connection>({ state: 'checking' });
-  const [backends, setBackends] = useState<BackendStatus[]>([]);
-  /** Backends the companion is still checking. */
-  const [pendingBackends, setPendingBackends] = useState<BackendId[]>([]);
+  const [agents, setAgents] = useState<AgentStatus[]>([]);
+  /** Agents the companion is still checking. */
+  const [pendingAgents, setPendingAgents] = useState<AgentId[]>([]);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
-  const [prefs, setPrefs] = useState<Prefs>({ backend: 'cursor', models: {} });
+  const [prefs, setPrefs] = useState<Prefs>({ agent: 'cursor', models: {} });
   const [recent, setRecent] = useState<RecentPr[]>([]);
-  /** Asked before the backend was known to be ready; sent once it is. */
+  /** Failing checks for the open PR. Null until the companion answers. */
+  const [checks, setChecks] = useState<{ failing: CheckRun[]; available: boolean } | null>(null);
+  /** Asked before the agent was known to be ready; sent once it is. */
   const [queued, setQueued] = useState(false);
   const [threads, dispatch] = useReducer(threadsReducer, {});
   const [chips, setChips] = useState<CodeSelection[]>([]);
   const [question, setQuestion] = useState('');
   const [running, setRunning] = useState<{ requestId: string; turnId: string } | null>(null);
-  const [backendMenuOpen, setBackendMenuOpen] = useState(false);
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  /** The comment just copied for GitHub, offered again from the toast. */
+  const [toast, setToast] = useState<{ selection: CodeSelection | null; seq: number } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const answerEndRef = useRef<HTMLDivElement>(null);
   const threadsRef = useRef(threads);
   threadsRef.current = threads;
 
   const thread = threads[key];
-  const backend = prefs.backend;
-  const backendStatus = backends.find((b) => b.id === backend);
-  const modelFor = (id: BackendId) => prefs.models[id] ?? backends.find((b) => b.id === id)?.models[0] ?? '';
-  const model = modelFor(backend);
+  const agent = prefs.agent;
+  const agentStatus = agents.find((b) => b.id === agent);
+  const modelFor = (id: AgentId) => prefs.models[id] ?? agents.find((b) => b.id === id)?.models[0] ?? '';
+  const model = modelFor(agent);
   const offline = connection.state === 'disconnected';
-  const loading = !offline && !backendStatus && (connection.state === 'checking' || pendingBackends.includes(backend));
+  const loading = !offline && !agentStatus && (connection.state === 'checking' || pendingAgents.includes(agent));
 
   useEffect(() => {
     browser.storage.local.get(PREFS_KEY).then((r) => {
-      const saved = r[PREFS_KEY] as Prefs | undefined;
-      if (saved?.backend) setPrefs(saved);
+      const saved = r[PREFS_KEY] as (Partial<Prefs> & { backend?: AgentId }) | undefined;
+      const chosen = saved?.agent ?? saved?.backend;
+      if (chosen) setPrefs({ agent: chosen, models: saved?.models ?? {}, recentModels: saved?.recentModels });
     });
     browser.storage.local.get(RECENT_KEY).then((r) => setRecent((r[RECENT_KEY] as RecentPr[] | undefined) ?? []));
   }, []);
@@ -217,13 +237,14 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     client.send({ type: 'status', requestId }, (msg) => {
       if (msg.type !== 'status') return;
       const pending = msg.pending ?? [];
-      setConnection({ state: 'connected', version: msg.version });
-      setPendingBackends(pending);
-      // While a re-check is running, keep showing the previous result for backends not checked yet.
-      setBackends((prev) =>
+      const reported = msg.agents ?? [];
+      setConnection({ state: 'connected', version: msg.version, protocol: msg.protocol ?? 0 });
+      setPendingAgents(pending);
+      // While a re-check is running, keep showing the previous result for agents not checked yet.
+      setAgents((prev) =>
         pending.length
-          ? [...prev.map((b) => msg.backends.find((n) => n.id === b.id) ?? b), ...msg.backends.filter((n) => !prev.some((b) => b.id === n.id))]
-          : msg.backends,
+          ? [...prev.map((b) => reported.find((n) => n.id === b.id) ?? b), ...reported.filter((n) => !prev.some((b) => b.id === n.id))]
+          : reported,
       );
       if (!pending.length) setCheckedAt(Date.now());
     });
@@ -248,6 +269,28 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
       }
     });
   }, [client, checkStatus]);
+
+  // Failing checks for the empty state's "Check CI" row. Hidden when gh can't answer.
+  useEffect(() => {
+    if (!pr || connection.state !== 'connected') return;
+    const requestId = newRequestId();
+    let live = true;
+    setChecks(null);
+    client.send(
+      {
+        type: 'checks',
+        requestId,
+        pr: { owner: pr.owner, repo: pr.repo, number: pr.number, headSha: pr.headSha, baseRef: pr.baseRef, title: pr.title },
+      },
+      (msg) => {
+        if (live && msg.type === 'checks') setChecks({ failing: msg.failing, available: msg.available });
+      },
+    );
+    return () => {
+      live = false;
+      client.forget(requestId);
+    };
+  }, [client, connection.state, pr?.owner, pr?.repo, pr?.number, pr?.headSha, pr?.baseRef, pr?.title]);
 
   // The offline screen promises a retry every 5 s.
   useEffect(() => {
@@ -283,46 +326,58 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
   }
 
   /** Starts a fresh thread and lets the companion stop the agent kept open for the old one. */
-  function resetThread(nextBackend: BackendId) {
+  function resetThread(nextAgent: AgentId) {
     const old = threadsRef.current[key];
     if (old?.sessionId) {
-      client.send({ type: 'close_session', requestId: newRequestId(), backend: old.backend, sessionId: old.sessionId });
+      client.send({ type: 'close_session', requestId: newRequestId(), agent: old.agent, sessionId: old.sessionId });
     }
-    dispatch({ type: 'reset', key, backend: nextBackend });
+    dispatch({ type: 'reset', key, agent: nextAgent });
   }
 
-  function selectBackend(id: BackendId) {
-    if (id === backend) return;
-    savePrefs({ ...prefs, backend: id });
-    if (key && thread?.turns.length) resetThread(id);
+  /** The next question goes to another agent, which gets the thread's earlier turns as history. */
+  function switchThread(nextAgent: AgentId) {
+    const old = threadsRef.current[key];
+    if (!old || old.agent === nextAgent) return;
+    if (old.sessionId) {
+      client.send({ type: 'close_session', requestId: newRequestId(), agent: old.agent, sessionId: old.sessionId });
+    }
+    dispatch({ type: 'switch', key, agent: nextAgent });
+  }
+
+  function selectAgent(id: AgentId) {
+    if (id === agent) return;
+    savePrefs({ ...prefs, agent: id });
+    if (key && thread?.turns.length) switchThread(id);
   }
 
   function selectModel(m: string) {
-    const recent = [m, ...(prefs.recentModels?.[backend] ?? []).filter((r) => r !== m)].slice(0, 5);
-    savePrefs({ ...prefs, models: { ...prefs.models, [backend]: m }, recentModels: { ...prefs.recentModels, [backend]: recent } });
+    const recent = [m, ...(prefs.recentModels?.[agent] ?? []).filter((r) => r !== m)].slice(0, 5);
+    savePrefs({ ...prefs, models: { ...prefs.models, [agent]: m }, recentModels: { ...prefs.recentModels, [agent]: recent } });
   }
 
-  function ask(text = question, selections = chips, useBackend = backend) {
-    const status = backends.find((b) => b.id === useBackend);
+  function ask(text = question, selections = chips, useAgent = agent, task?: 'explain_ci') {
+    const status = agents.find((b) => b.id === useAgent);
     if (!pr || !text.trim() || running || status?.state !== 'ready') return;
-    const useModel = modelFor(useBackend);
+    const useModel = modelFor(useAgent);
     const current = threadsRef.current[key];
-    const continuing = !!current && current.backend === useBackend && current.turns.length > 0;
-    if (current && current.backend !== useBackend) resetThread(useBackend);
+    const sessionId = current?.agent === useAgent ? current.sessionId : null;
+    if (current && current.agent !== useAgent) switchThread(useAgent);
+    const history = !sessionId && current?.turns.length ? historyOf(current.turns) : [];
 
     const requestId = newRequestId();
     const turn: Turn = {
       id: requestId,
       question: text.trim(),
       selections,
-      backend: useBackend,
+      agent: useAgent,
       model: useModel,
       steps: [],
       activity: [],
       text: '',
       status: 'running',
       startedAt: Date.now(),
-      first: !continuing,
+      first: !sessionId,
+      task,
     };
     const turnKey = key;
     dispatch({ type: 'start', key: turnKey, turn });
@@ -336,12 +391,14 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
       {
         type: 'ask',
         requestId,
-        backend: useBackend,
+        agent: useAgent,
         model: useModel,
         pr: { owner: pr.owner, repo: pr.repo, number: pr.number, headSha: pr.headSha, baseRef: pr.baseRef, title: pr.title },
         selections: turn.selections,
         question: turn.question,
-        sessionId: continuing ? (current?.sessionId ?? null) : null,
+        sessionId,
+        ...(history.length && { history }),
+        ...(task && { task }),
       },
       (msg: CompanionMessage) => {
         if (msg.type === 'progress') {
@@ -357,7 +414,7 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
           } else if (ev.type === 'error') {
             update(() => ({ status: 'error', finishedAt: Date.now(), error: { code: ev.code, message: ev.message, fixSteps: ev.fixSteps } }));
             setRunning(null);
-            if (ev.code === 'backend_not_installed' || ev.code === 'backend_not_logged_in') checkStatus();
+            if (ev.code === 'agent_not_installed' || ev.code === 'agent_not_logged_in') checkStatus();
           }
         }
       },
@@ -380,16 +437,33 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     client.send({ type: 'cancel', requestId: running.requestId });
   }
 
-  function retry(turn: Turn, withBackend?: BackendId) {
-    if (withBackend) {
-      savePrefs({ ...prefs, backend: withBackend });
-      ask(turn.question, turn.selections, withBackend);
+  function retry(turn: Turn, withAgent?: AgentId) {
+    if (withAgent) {
+      savePrefs({ ...prefs, agent: withAgent });
+      ask(turn.question, turn.selections, withAgent, turn.task);
     } else {
-      ask(turn.question, turn.selections, turn.backend);
+      ask(turn.question, turn.selections, turn.agent, turn.task);
     }
   }
 
-  const otherReadyBackend = useMemo(() => backends.find((b) => b.id !== backend && b.state === 'ready'), [backends, backend]);
+  function openComment(selection: CodeSelection | null) {
+    if (page.tabId === null) return;
+    browser.tabs.sendMessage(page.tabId, { kind: 'open-comment', selection } satisfies TabRequest).catch(() => {});
+  }
+
+  async function postComment(selection: CodeSelection | null, text: string) {
+    await navigator.clipboard.writeText(text);
+    openComment(selection);
+    setToast((t) => ({ selection, seq: (t?.seq ?? 0) + 1 }));
+  }
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 12_000);
+    return () => clearTimeout(id);
+  }, [toast?.seq]);
+
+  const otherReadyAgent = useMemo(() => agents.find((b) => b.id !== agent && b.state === 'ready'), [agents, agent]);
   const lastTurn = thread?.turns.at(-1);
 
   // Newest commit the companion reported for this PR.
@@ -398,8 +472,15 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
       const sha = t.headSha ?? t.steps.find((s) => s.step === 'preparing_worktree')?.detail;
       if (sha) return sha;
     }
-    return pr?.headSha;
-  }, [thread, pr?.headSha]);
+    return pr?.headSha ?? pr?.latestSha;
+  }, [thread, pr?.headSha, pr?.latestSha]);
+
+  // The newest answer was read at an older commit than the page now shows.
+  const lastDone = thread?.turns.findLast((t) => t.status === 'done' && t.headSha);
+  const staleFrom =
+    !running && lastDone?.headSha && pr?.latestSha && !pr.latestSha.startsWith(lastDone.headSha) && !lastDone.headSha.startsWith(pr.latestSha)
+      ? lastDone
+      : undefined;
 
   const repoLink = useMemo<RepoLink | null>(
     () => (pr ? { owner: pr.owner, repo: pr.repo, sha: knownSha } : null),
@@ -407,29 +488,65 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
   );
 
   // Stable for the panel's lifetime and always calling the latest handlers, so memoized turns don't re-render.
-  const latest = useRef({ stop, retry, checkStatus });
-  latest.current = { stop, retry, checkStatus };
+  const latest = useRef({ stop, retry, checkStatus, postComment });
+  latest.current = { stop, retry, checkStatus, postComment };
   const turnActions = useMemo<TurnActions>(
     () => ({
       stop: () => latest.current.stop(),
-      retry: (turn, withBackend) => latest.current.retry(turn, withBackend),
+      retry: (turn, withAgent) => latest.current.retry(turn, withAgent),
       recheck: () => latest.current.checkStatus(),
+      post: (selection, text) => latest.current.postComment(selection, text),
     }),
     [],
   );
 
+  const pickers = (
+    <>
+      <AgentPicker
+        agents={agents}
+        selected={agent}
+        companionVersion={connection.state === 'connected' ? connection.version : undefined}
+        checkedAt={checkedAt}
+        offline={offline}
+        onSelect={selectAgent}
+        onRecheck={checkStatus}
+        onOpenChange={setAgentMenuOpen}
+      />
+      <ModelPicker
+        status={agentStatus}
+        model={model}
+        recent={prefs.recentModels?.[agent] ?? []}
+        disabled={offline}
+        onChange={selectModel}
+      />
+    </>
+  );
+
   if (!pr) {
-    const readiness: { tone: 'ok' | 'warn' | 'idle'; text: string } = offline
+    const status: { tone: Tone; text: string } = offline
       ? { tone: 'warn', text: 'Companion offline' }
-      : loading || !backendStatus
+      : loading || !agentStatus
         ? { tone: 'idle', text: 'Checking…' }
-        : backendStatus.state === 'ready'
-          ? { tone: 'ok', text: `${backendStatus.label} · ${modelLabel(backend, model)} is ready` }
-          : { tone: 'warn', text: `${backendStatus.label} ${backendStatus.state === 'not_installed' ? 'isn’t installed' : 'isn’t logged in'}` };
-    return <NoPullRequest recent={recent} readiness={readiness} />;
+        : agentStatus.state === 'ready'
+          ? { tone: 'ok', text: 'Ready' }
+          : { tone: 'warn', text: agentStatus.state === 'not_installed' ? 'Not installed' : 'Not logged in' };
+    const readiness: { kind: 'success' | 'error' | 'loading'; text: string } = offline
+      ? { kind: 'error', text: 'Can’t reach the companion' }
+      : loading || !agentStatus
+        ? { kind: 'loading', text: 'Checking your agents…' }
+        : agentStatus.state === 'ready'
+          ? { kind: 'success', text: `${agentStatus.label} · ${modelLabel(agent, model)} is ready` }
+          : { kind: 'error', text: `${agentStatus.label} ${agentStatus.state === 'not_installed' ? 'isn’t installed' : 'isn’t logged in'}` };
+    return (
+      <div className="quack panel">
+        <PanelHeader pickers={pickers} status={status} running={false} />
+        {page.notice && <Banner>{page.notice}</Banner>}
+        <NoPullRequest recent={recent} readiness={readiness} />
+      </div>
+    );
   }
 
-  const status: { tone: 'ok' | 'warn' | 'err' | 'idle' | 'busy'; text: string } = offline
+  const status: { tone: Tone; text: string } = offline
     ? { tone: 'warn', text: 'Companion offline' }
     : loading
       ? { tone: 'idle', text: 'Checking…' }
@@ -437,84 +554,47 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
         ? { tone: 'busy', text: 'Working…' }
         : lastTurn?.status === 'error' && lastTurn.error?.code !== 'cancelled'
           ? { tone: 'err', text: 'Error' }
-          : backendStatus && backendStatus.state !== 'ready'
-            ? { tone: 'warn', text: backendStatus.state === 'not_installed' ? 'Not installed' : 'Not logged in' }
+          : agentStatus && agentStatus.state !== 'ready'
+            ? { tone: 'warn', text: agentStatus.state === 'not_installed' ? 'Not installed' : 'Not logged in' }
             : { tone: 'ok', text: 'Ready' };
 
-  const versionMismatch = connection.state === 'connected' && connection.version !== QUACK_VERSION;
+  const incompatible = connection.state === 'connected' && connection.protocol !== PROTOCOL_VERSION;
   const canAttach = page.lastSelection && !chips.some((c) => sameSelection(c, page.lastSelection!));
-  const canAsk = !!question.trim() && (loading || backendStatus?.state === 'ready') && !running;
+  const canAsk = !!question.trim() && (loading || agentStatus?.state === 'ready') && !running;
   const empty = !thread?.turns.length;
-  const hint = backendMenuOpen
-    ? 'Switching backend starts a new thread'
+  const hint = agentMenuOpen
+    ? 'Switching keeps the thread. Different duck, same pond.'
     : queued
-      ? `Sends once ${backendLabel(backend)} is ready`
+      ? `Sends once ${agentLabel(agent)} is ready`
       : loading
-        ? 'Type now — it sends once a backend is ready'
+        ? 'Type now. It sends once the duck is up.'
         : running
-      ? lastTurn && !lastTurn.text && !lastTurn.activity.length
-        ? 'Esc cancels'
-        : 'You can type while it answers'
-      : thread?.turns.length
-        ? 'Keeps this thread’s context'
-        : 'Enter to send · Shift+Enter for a new line';
+          ? lastTurn && !lastTurn.text && !lastTurn.activity.length
+            ? 'Esc cancels'
+            : 'You can type while it paddles'
+          : thread?.turns.length
+            ? 'The duck remembers this thread'
+            : 'Enter to send · Shift+Enter for a new line';
 
   return (
     <div className="quack panel">
-      <header className="header">
-        <div className="title-row">
-          <QuackMark size={16} className="logo" />
-          <span className="wordmark">Quack</span>
-          <span className="divider" aria-hidden="true" />
-          <span className="pr-number">#{pr.number}</span>
-          <span className="pr-title" title={pr.title}>
-            {pr.title ?? ''}
-          </span>
-          {knownSha && (
-            <code className="sha" title="Head commit the assistant reads">
-              {shortSha(knownSha)}
-            </code>
-          )}
-          <button
-            type="button"
-            className="ghost icon-only collapse"
-            aria-label="Collapse panel"
-            title={running ? 'Collapse panel (stops the current answer)' : `Collapse panel · reopen with ${SHORTCUT}`}
-            onClick={() => window.close()}
-          >
-            <CollapsePanel size={16} />
-          </button>
-        </div>
-        <div className="picker-row">
-          <BackendPicker
-            backends={backends}
-            selected={backend}
-            companionVersion={connection.state === 'connected' ? connection.version : undefined}
-            checkedAt={checkedAt}
-            offline={offline}
-            onSelect={selectBackend}
-            onRecheck={checkStatus}
-            onOpenChange={setBackendMenuOpen}
-          />
-          <ModelPicker
-            status={backendStatus}
-            model={model}
-            recent={prefs.recentModels?.[backend] ?? []}
-            disabled={offline}
-            onChange={selectModel}
-          />
-          <span className={`status ${status.tone}`} title={status.text}>
-            <StatusDot tone={status.tone === 'busy' ? 'ok' : status.tone} /> <span className="status-text">{status.text}</span>
-          </span>
-        </div>
-      </header>
+      <PanelHeader pr={pr} sha={knownSha} pickers={pickers} status={status} running={!!running} />
 
       {page.notice && <Banner>{page.notice}</Banner>}
-      {versionMismatch && connection.state === 'connected' && (
+      {incompatible && connection.state === 'connected' && (
         <Banner>
-          Companion {connection.version} doesn’t match extension {QUACK_VERSION}. Reinstall it:
+          This extension speaks protocol {PROTOCOL_VERSION}, but the companion speaks{' '}
+          {connection.protocol ? `protocol ${connection.protocol}` : 'an older protocol'}. Reinstall it:
           <CommandBlock command={INSTALL_COMMAND} />
         </Banner>
+      )}
+      {staleFrom && !offline && (
+        <StaleBanner
+          from={staleFrom.headSha!}
+          to={pr.latestSha!}
+          disabled={agentStatus?.state !== 'ready'}
+          onReask={() => ask(staleFrom.question, staleFrom.selections, agent, staleFrom.task)}
+        />
       )}
 
       <main className={`body ${empty ? 'roomy' : ''}`} aria-live="polite" aria-busy={loading}>
@@ -522,21 +602,18 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
           <CompanionOffline error={connection.error} onRetry={checkStatus} />
         ) : (
           <>
-            {empty && <Intro pr={pr} sha={knownSha} hasChips={chips.length > 0} />}
-            {empty && loading && (
-              <>
-                <Readiness connection={connection} backend={backend} pending={pendingBackends} />
-                <SuggestionsSkeleton />
-              </>
+            {empty && loading && <Readiness connection={connection} agent={agent} pending={pendingAgents} />}
+            {empty && !loading && chips.length > 0 && <SelectionIntro chips={chips} sha={knownSha} />}
+            {empty && !loading && !chips.length && (
+              <EmptyAsk
+                failing={checks?.available ? checks.failing : []}
+                canCheck={agentStatus?.state === 'ready' && !running}
+                onCheck={() => ask(EXPLAIN_CI, [], agent, 'explain_ci')}
+              />
             )}
-            {empty && !chips.length && backendStatus?.state === 'ready' && (
-              <>
-                <Suggestions onPick={(q) => ask(q, [])} />
-                <LinesTip />
-              </>
-            )}
-            {backendStatus && backendStatus.state !== 'ready' && !lastTurn?.error?.fixSteps && (
-              <BackendSetup status={backendStatus} onRecheck={checkStatus} />
+            {empty && agentStatus?.state === 'ready' && chips.length > 0 && <SelectionSuggestions chips={chips} onPick={(q) => ask(q)} />}
+            {agentStatus && agentStatus.state !== 'ready' && !lastTurn?.error?.fixSteps && (
+              <AgentSetup status={agentStatus} onRecheck={checkStatus} />
             )}
             {thread?.turns.map((turn) => (
               <TurnView
@@ -544,12 +621,14 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
                 turn={turn}
                 prNumber={pr.number}
                 link={repoLink!}
-                otherBackend={otherReadyBackend}
+                otherAgent={otherReadyAgent}
+                checks={checks?.failing ?? []}
                 actions={turnActions}
+                latest={turn === lastTurn}
               />
             ))}
             {thread?.turns.length && !running ? (
-              <button type="button" className="ghost new-thread" onClick={() => resetThread(backend)}>
+              <button type="button" className="ghost new-thread" onClick={() => resetThread(agent)}>
                 Start a new thread
               </button>
             ) : null}
@@ -559,6 +638,20 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
       </main>
 
       <footer className="composer">
+        {toast && (
+          <div className="toast" role="status">
+            <DuckSuccess width={64} />
+            <p>
+              <strong>Copied.</strong> Paste it into GitHub’s comment box, then Start a review.
+            </p>
+            <button type="button" className="link" onClick={() => openComment(toast.selection)}>
+              Show
+            </button>
+            <button type="button" className="ghost icon-only" aria-label="Dismiss" onClick={() => setToast(null)}>
+              <Close size={12} />
+            </button>
+          </div>
+        )}
         {offline ? (
           <div className="composer-disabled">Connect the companion to ask</div>
         ) : (
@@ -566,18 +659,7 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
             <div className="attachments" aria-label="Attached context">
               {!chips.length && !canAttach && <span className="muted small">No code attached · asks about the whole PR</span>}
               {chips.map((c, i) => (
-                <span key={i} className="chip">
-                  <FileIcon size={12} />
-                  <span className="chip-label">{selectionLabel(c)}</span>
-                  <button
-                    type="button"
-                    className="ghost icon-only"
-                    aria-label={`Remove ${selectionLabel(c)}`}
-                    onClick={() => setChips(chips.filter((_, j) => j !== i))}
-                  >
-                    <Close size={12} />
-                  </button>
-                </span>
+                <SelectionChip key={i} selection={c} onRemove={() => setChips(chips.filter((_, j) => j !== i))} />
               ))}
               {canAttach && (
                 <button
@@ -631,6 +713,58 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
   );
 }
 
+function PanelHeader({
+  pr,
+  sha,
+  pickers,
+  status,
+  running,
+}: {
+  pr?: NonNullable<PanelPage['pr']>;
+  sha?: string;
+  pickers: ReactNode;
+  status: { tone: Tone; text: string };
+  running: boolean;
+}) {
+  return (
+    <header className="header">
+      <div className="title-row">
+        <QuackLogo onDark size={16} />
+        <span className="wordmark display">Quack</span>
+        {pr && (
+          <>
+            <span className="divider" aria-hidden="true" />
+            <span className="pr-number">#{pr.number}</span>
+            <span className="pr-title" title={pr.title}>
+              {pr.title ?? ''}
+            </span>
+            {sha && (
+              <code className="sha" title="Head commit the agent reads">
+                {shortSha(sha)}
+              </code>
+            )}
+          </>
+        )}
+        <button
+          type="button"
+          className="ghost icon-only collapse"
+          aria-label="Collapse panel"
+          title={running ? 'Collapse panel (stops the current answer)' : `Collapse panel · reopen with ${SHORTCUT}`}
+          onClick={() => window.close()}
+        >
+          <CollapsePanel size={16} />
+        </button>
+      </div>
+      <div className="picker-row">
+        {pickers}
+        <span className={`status ${status.tone}`} title={status.text}>
+          <StatusDot tone={status.tone === 'busy' ? 'ok' : status.tone} /> <span className="status-text">{status.text}</span>
+        </span>
+      </div>
+    </header>
+  );
+}
+
 function Banner({ children }: { children: ReactNode }) {
   return (
     <div className="banner" role="status">
@@ -640,136 +774,165 @@ function Banner({ children }: { children: ReactNode }) {
   );
 }
 
-function NoPullRequest({ recent, readiness }: { recent: RecentPr[]; readiness: { tone: 'ok' | 'warn' | 'idle'; text: string } }) {
+function StaleBanner({ from, to, disabled, onReask }: { from: string; to: string; disabled: boolean; onReask: () => void }) {
   return (
-    <div className="quack panel">
-      <div className="body start">
-        <section className="start-head">
-          <QuackMark size={40} />
-          <h1>Open a pull request to start</h1>
-          <p className="muted">Quack answers questions about a pull request’s code.</p>
-        </section>
-        <a className="button primary block" href={REVIEW_REQUESTS_URL} target="_blank" rel="noreferrer">
-          Open my review requests <ExternalArrow size={14} />
-        </a>
-        {recent.length > 0 && (
-          <section className="list-section" aria-labelledby="recent-h">
-            <h2 id="recent-h" className="section-title">
-              Recent
-            </h2>
-            <div className="list-card">
-              {recent.map((r) => (
-                <button
-                  key={prKey(r)}
-                  type="button"
-                  className="list-row"
-                  onClick={() => browser.tabs.update({ url: `https://github.com/${r.owner}/${r.repo}/pull/${r.number}/files` })}
-                >
-                  <span className="list-row-text">
-                    <span className="list-row-title">{r.title ?? `Pull request #${r.number}`}</span>
-                    <span className="muted small">
-                      {r.owner}/{r.repo} #{r.number} · {plural(r.questions, 'question')} · {timeAgo(r.at)}
-                    </span>
-                  </span>
-                  <ChevronRight size={14} />
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-        <div className="start-status" role="status">
-          <StatusDot tone={readiness.tone} /> {readiness.text}
+    <div className="banner stale" role="status">
+      <div className="stale-text">
+        <strong>New commits since this answer. The pond moved.</strong>
+        <code className="small">
+          {shortSha(from)} → {shortSha(to)}
+        </code>
+      </div>
+      <button type="button" className="primary" disabled={disabled} onClick={onReask}>
+        Re-ask on latest
+      </button>
+    </div>
+  );
+}
+
+function NoPullRequest({ recent, readiness }: { recent: RecentPr[]; readiness: { kind: 'success' | 'error' | 'loading'; text: string } }) {
+  return (
+    <div className="body start">
+      <section className="start-head">
+        <QuackLogo size={44} />
+        <div>
+          <h1 className="display">No PR, no quack.</h1>
+          <p className="muted">Open a pull request and the duck takes it from there.</p>
         </div>
+      </section>
+      <a className="button primary block" href={REVIEW_REQUESTS_URL} target="_blank" rel="noreferrer">
+        Open my review requests
+      </a>
+      {recent.length > 0 && (
+        <section className="list-section" aria-labelledby="recent-h">
+          <h2 id="recent-h" className="section-title">
+            Recently quacked about
+          </h2>
+          <div className="list-card">
+            {recent.map((r) => (
+              <button
+                key={prKey(r)}
+                type="button"
+                className="list-row"
+                onClick={() => browser.tabs.update({ url: `https://github.com/${r.owner}/${r.repo}/pull/${r.number}/files` })}
+              >
+                <span className="list-row-text">
+                  <span className="list-row-title">{r.title ?? `Pull request #${r.number}`}</span>
+                  <span className="muted small">
+                    {r.owner}/{r.repo} #{r.number} · {plural(r.questions, 'question')} · {timeAgo(r.at)}
+                  </span>
+                </span>
+                <ChevronRight size={14} />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      <div className="start-status" role="status">
+        <StatusIcon kind={readiness.kind} size={14} /> {readiness.text}
       </div>
     </div>
   );
 }
 
-function Intro({ pr, sha, hasChips }: { pr: NonNullable<PanelPage['pr']>; sha?: string; hasChips: boolean }) {
-  const hasFacts = pr.headRef || pr.baseRef || pr.commits !== undefined || pr.files !== undefined;
+function EmptyAsk({ failing, canCheck, onCheck }: { failing: CheckRun[]; canCheck: boolean; onCheck: () => void }) {
   return (
-    <section className="intro">
-      <h2>Ask about this pull request</h2>
-      {hasChips ? (
-        <p className="muted">
-          Answers read the code at {sha ? <code>{shortSha(sha)}</code> : 'the PR’s latest commit'} plus whatever you attach below. Nothing is
-          posted until you choose to.
-        </p>
-      ) : (
-        hasFacts && (
-          <div className="pr-facts">
-            {(pr.headRef || pr.baseRef) && (
-              <span className="fact mono">
-                {pr.headRef ?? '…'} → {pr.baseRef ?? '…'}
-              </span>
-            )}
-            {pr.commits !== undefined && <span className="fact">{plural(pr.commits, 'commit')}</span>}
-            {pr.files !== undefined && (
-              <span className="fact">
-                {plural(pr.files, 'file')}
-                {pr.additions !== undefined && (
-                  <>
-                    {' · '}
-                    <b className="add">+{pr.additions}</b> <b className="del">−{pr.deletions ?? 0}</b>
-                  </>
-                )}
-              </span>
-            )}
-          </div>
-        )
+    <div className="empty-ask">
+      <h2 className="display">Explain it to the duck.</h2>
+      {failing.length > 0 && (
+        <ul className="review-actions" aria-label="Actions for this PR">
+          <li className="review-action failing">
+            <StatusIcon kind="error" size={20} />
+            <span className="review-copy">
+              <strong>{failing.length === 1 ? '1 check failing' : `${failing.length} checks failing`}</strong>
+              <span>Find out if it’s this PR or a flake</span>
+            </span>
+            <button type="button" className="primary" disabled={!canCheck} onClick={onCheck}>
+              Check CI
+            </button>
+          </li>
+        </ul>
       )}
-    </section>
+      <HowToAsk />
+    </div>
   );
 }
 
-function Readiness({ connection, backend, pending }: { connection: Connection; backend: BackendId; pending: BackendId[] }) {
-  const connected = connection.state === 'connected';
-  const othersDone = connected && !pending.some((id) => id !== backend);
-  const steps: { state: 'done' | 'current' | 'waiting'; label: string; meta: string }[] = [
-    connected
-      ? { state: 'done', label: 'Companion connected', meta: `v${connection.version}` }
-      : { state: 'current', label: 'Connecting to the companion', meta: '' },
-    { state: connected ? 'current' : 'waiting', label: `Checking ${backendLabel(backend)}`, meta: 'Last used' },
-    { state: othersDone ? 'done' : 'waiting', label: 'Other backends', meta: othersDone ? 'Done' : 'Waiting' },
-  ];
+function HowToAsk() {
   return (
-    <section className="prep-card" role="status" aria-labelledby="ready-h">
-      <div className="prep-head">
-        <strong id="ready-h">Getting Quack ready</strong>
-        <span className="muted small">Usually a few seconds</span>
+    <section className="howto" aria-labelledby="howto-ask">
+      <h3 id="howto-ask">Ask about specific code</h3>
+      <div className="howto-diff" aria-hidden="true">
+        <div>
+          <span className="ln">39</span>
+          <span>if (!user.isOwner) …</span>
+        </div>
+        <div className="sel">
+          <span className="ln">40</span>
+          <span>const invoice = await …</span>
+        </div>
+        <div className="sel">
+          <span className="ln">41</span>
+          <span>return softDelete(…)</span>
+        </div>
+        <div>
+          <span className="ln">42</span>
+          <span>{'}'}</span>
+        </div>
       </div>
-      <ol className="prep-steps">
-        {steps.map((s) => (
-          <li key={s.label} className={s.state}>
-            <span className="prep-icon">
-              {s.state === 'done' ? <Check size={12} /> : s.state === 'current' ? <Spinner size={16} /> : <Circle size={14} />}
-            </span>
-            <span className="prep-label">{s.label}</span>
-            <span className="muted small prep-state">{s.meta}</span>
-          </li>
-        ))}
+      <ol>
+        <li>Click a line number in the diff, Shift-click another to select a range.</li>
+        <li>
+          Press <kbd>{SHORTCUT}</kbd> or click <strong>Ask Quack</strong>.
+        </li>
       </ol>
     </section>
   );
 }
 
-const SUGGESTIONS = [
-  { icon: <Summary size={16} />, text: 'Summarize what this PR changes and why' },
-  { icon: <Search size={16} />, text: 'Does this duplicate anything we already have?' },
-  { icon: <Warning size={16} />, text: 'What could break?' },
-];
-
-function Suggestions({ onPick }: { onPick: (question: string) => void }) {
+function SelectionChip({ selection, onRemove }: { selection: CodeSelection; onRemove: () => void }) {
+  const chip = selectionChip(selection);
+  const title = selectionLabel(selection);
   return (
-    <section className="list-section" aria-labelledby="start-h">
-      <h3 id="start-h" className="section-title">
-        Start with
+    <span className="chip" title={title}>
+      <span className="chip-path">
+        {chip.dir && <span className="chip-dir">{chip.dir}</span>}
+        <b>{chip.name}</b>
+      </span>
+      {chip.lines && <span className="chip-lines">{chip.lines}</span>}
+      <button type="button" className="ghost icon-only" aria-label={`Remove ${title}`} onClick={onRemove}>
+        <Close size={12} />
+      </button>
+    </span>
+  );
+}
+
+function SelectionIntro({ chips, sha }: { chips: CodeSelection[]; sha?: string }) {
+  const lines = chips.reduce((n, c) => n + lineCount(c), 0);
+  return (
+    <section className="intro selection">
+      <h2 className="display">{lines ? `${plural(lines, 'line')}, one duck.` : 'Your selection, one duck.'}</h2>
+      <p className="muted">
+        Answers read the code at {sha ? <code>{shortSha(sha)}</code> : 'the PR’s latest commit'} plus what you attach. Nothing is posted unless
+        you say so.
+      </p>
+    </section>
+  );
+}
+
+const SELECTION_SUGGESTIONS = ['Does this already exist?', 'Suggest a simpler way', 'What could break?'];
+
+function SelectionSuggestions({ chips, onPick }: { chips: CodeSelection[]; onPick: (question: string) => void }) {
+  const only = chips.length === 1 ? linesOf(chips[0]) : '';
+  return (
+    <section className="list-section" aria-labelledby="suggest-h">
+      <h3 id="suggest-h" className="section-title">
+        {only ? `Suggested for ${only}` : 'Suggested'}
       </h3>
-      <div className="list-card">
-        {SUGGESTIONS.map((s) => (
-          <button key={s.text} type="button" className="list-row" onClick={() => onPick(s.text)}>
-            {s.icon}
-            <span className="list-row-text">{s.text}</span>
+      <div className="pill-row">
+        {SELECTION_SUGGESTIONS.map((q) => (
+          <button key={q} type="button" className="pill suggestion" onClick={() => onPick(q)}>
+            {q}
           </button>
         ))}
       </div>
@@ -777,37 +940,68 @@ function Suggestions({ onPick }: { onPick: (question: string) => void }) {
   );
 }
 
-function SuggestionsSkeleton() {
+const NO_ACTIVITY: string[] = [];
+
+/** A thinking headline from `thinking.ts`, swapped every few seconds. Decoration only. */
+function ThinkingHeadline({ phase, agent, activity, initial }: { phase: Phase; agent: string; activity: string[]; initial?: string }) {
+  const options = useMemo(() => messagesFor(phase, { agent, activity }), [phase, agent, activity]);
+  const [line, setLine] = useState(() => (initial && options.includes(initial) ? initial : nextMessage(options)));
+  useEffect(() => {
+    setLine((prev) => (options.includes(prev) ? prev : nextMessage(options, prev)));
+    const id = setInterval(() => setLine((prev) => nextMessage(options, prev)), ROTATE_MS);
+    return () => clearInterval(id);
+  }, [options]);
   return (
-    <section className="list-section" aria-hidden="true">
-      <span className="skel" style={{ width: 72 }} />
-      <div className="list-card soft">
-        {[70, 82, 40].map((w) => (
-          <div key={w} className="list-row">
-            <span className="skel icon" />
-            <span className="skel" style={{ width: `${w}%` }} />
-          </div>
-        ))}
+    <span className="thinking-line display" aria-hidden="true" key={line}>
+      {line}
+    </span>
+  );
+}
+
+function Readiness({ connection, agent, pending }: { connection: Connection; agent: AgentId; pending: AgentId[] }) {
+  const connected = connection.state === 'connected';
+  const othersDone = connected && !pending.some((id) => id !== agent);
+  const steps: { state: 'done' | 'current' | 'waiting'; label: string; meta: string }[] = [
+    connected
+      ? { state: 'done', label: 'Companion connected', meta: `v${connection.version}` }
+      : { state: 'current', label: 'Connecting to the companion', meta: '' },
+    { state: connected ? 'current' : 'waiting', label: `Checking ${agentLabel(agent)}`, meta: 'Last used' },
+    { state: othersDone ? 'done' : 'waiting', label: 'Other agents', meta: othersDone ? 'Done' : 'Waiting' },
+  ];
+  return (
+    <section className="prep-card" role="status" aria-label="Getting Quack ready">
+      <div className="prep-head">
+        <StatusIcon kind="loading" size={18} />
+        <ThinkingHeadline phase="waking" agent={agentLabel(agent)} activity={NO_ACTIVITY} initial="Waking the duck. It is not a morning duck." />
       </div>
+      <PrepSteps steps={steps} />
     </section>
   );
 }
 
-function LinesTip() {
+function PrepSteps({ steps }: { steps: { state: 'done' | 'current' | 'waiting'; label: ReactNode; meta: string }[] }) {
   return (
-    <section className="lines-tip">
-      <Lines size={16} />
-      <div>
-        <strong>Ask about specific lines</strong>
-        <p className="muted">
-          Select lines in the diff, then press <kbd>{SHORTCUT}</kbd> or click <b>Ask AI</b>.
-        </p>
-      </div>
-    </section>
+    <ol className="prep-steps">
+      {steps.map((s, i) => (
+        <li key={i} className={s.state}>
+          <span className="prep-icon">
+            {s.state === 'done' ? (
+              <StatusIcon kind="success" size={14} />
+            ) : s.state === 'current' ? (
+              <StatusIcon kind="loading" size={14} />
+            ) : (
+              <Circle size={14} />
+            )}
+          </span>
+          <span className="prep-label">{s.label}</span>
+          <span className="muted small prep-state">{s.meta}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
-function BackendSetup({ status, onRecheck }: { status: BackendStatus; onRecheck: () => void }) {
+function AgentSetup({ status, onRecheck }: { status: AgentStatus; onRecheck: () => void }) {
   return (
     <section className="setup-card">
       <div className="setup-head">
@@ -818,7 +1012,7 @@ function BackendSetup({ status, onRecheck }: { status: BackendStatus; onRecheck:
           <h3>
             {status.label} {status.state === 'not_installed' ? 'isn’t installed' : 'isn’t logged in'}
           </h3>
-          <p className="muted">Follow these steps, then re-check. Or pick another backend above.</p>
+          <p className="muted">Follow these steps, then re-check. Or pick another agent above.</p>
         </div>
       </div>
       <FixSteps steps={status.fixSteps} />
@@ -834,88 +1028,138 @@ function BackendSetup({ status, onRecheck }: { status: BackendStatus; onRecheck:
 function CompanionOffline({ error, onRetry }: { error: string; onRetry: () => void }) {
   return (
     <section className="offline">
-      <div className="setup-head">
-        <span className="setup-icon">
-          <Terminal size={18} />
-        </span>
-        <div>
-          <h2>Can’t reach the companion</h2>
-          <p className="muted">
-            The panel needs the local companion to run agents against this PR’s code. Once it’s installed, your browser starts it automatically.
-          </p>
-        </div>
+      <div>
+        <h2 className="display">The duck can’t hear the companion.</h2>
+        <p className="muted">
+          Quack needs its local companion to read this PR’s code. Once installed, your browser starts it on its own.
+        </p>
       </div>
       <h3>1. Install it once</h3>
       <CommandBlock command={INSTALL_COMMAND} />
       <h3>2. Restart your browser</h3>
-      <p>It then picks up the companion. No terminal needs to stay open.</p>
-      <div className="row center">
+      <p className="muted">No terminal needs to stay open.</p>
+      <div className="row">
         <button type="button" className="primary" onClick={onRetry}>
-          <Retry size={14} /> Retry connection
+          Retry connection
         </button>
-        <span className="muted">Also retrying every 5 s</span>
+        <span className="muted small">Also retrying every 5 s</span>
       </div>
       <p className="muted small">
-        Already installed? Run the install command again to repair it. Details: {error}
+        Already installed? Run the command again to repair it. Details: {error}
       </p>
     </section>
   );
 }
 
-const STEP_ORDER: ProgressStep[] = ['finding_repo', 'fetching_pr', 'preparing_worktree', 'starting_agent'];
+const PREP_STEPS: ProgressStep[] = ['finding_repo', 'fetching_pr', 'preparing_worktree', 'starting_agent'];
 
-function PrepCard({ turn, prNumber, onCancel }: { turn: Turn; prNumber: number; onCancel: () => void }) {
+function prepOrder(turn: Turn): ProgressStep[] {
+  if (turn.task !== 'explain_ci') return PREP_STEPS;
+  return ['finding_repo', 'fetching_pr', 'preparing_worktree', 'fetching_ci', 'starting_agent'];
+}
+
+function PrepCard({ turn, prNumber, onCancel, now }: { turn: Turn; prNumber: number; onCancel: () => void; now: number }) {
+  const order = prepOrder(turn);
   const current = turn.steps.at(-1)?.step ?? 'finding_repo';
-  const currentIndex = STEP_ORDER.indexOf(current);
-  const label = (step: ProgressStep, detail?: string) => {
+  const currentIndex = Math.max(0, order.indexOf(current));
+  const agent = agentLabel(turn.agent);
+  const label = (step: ProgressStep, done: boolean, detail?: string) => {
     switch (step) {
       case 'finding_repo':
-        return 'Finding local clone';
+        return done ? 'Found the local clone' : 'Finding the local clone';
       case 'fetching_pr':
-        return `Fetching PR #${prNumber}`;
+        return done ? `Fetched PR #${prNumber}` : `Fetching PR #${prNumber}`;
       case 'preparing_worktree':
         return detail ? (
           <>
-            Preparing worktree at <code>{shortSha(detail)}</code>
+            {done ? 'Worktree ready at' : 'Preparing worktree at'} <code>{shortSha(detail)}</code>
           </>
         ) : (
           'Preparing worktree'
         );
+      case 'fetching_ci':
+        return done ? 'Fetched CI logs' : 'Fetching CI logs';
       case 'starting_agent':
-        return `Starting ${backendLabel(turn.backend)}`;
+        return `Starting ${agent}`;
+      default:
+        return step;
     }
   };
+  const steps = order.map((step, i) => {
+    const entry = turn.steps.find((s) => s.step === step);
+    const next = turn.steps.find((s) => s.step === order[i + 1]);
+    const state = i < currentIndex ? 'done' : i === currentIndex ? 'current' : 'waiting';
+    return {
+      state,
+      label: label(step, state === 'done', entry?.detail),
+      meta: state === 'done' ? (entry && next ? duration(next.at - entry.at) : 'Done') : state === 'current' ? '' : 'Waiting',
+    } as const;
+  });
+  const phase =
+    current === 'fetching_ci' ? 'ci' : pickPhase({ preparing: true, activity: [], text: '', elapsedMs: now - turn.startedAt, task: turn.task });
   return (
     <section className="prep-card" aria-label="Preparing">
       <div className="prep-head">
-        <strong>Getting the PR code ready</strong>
-        <span className="muted small">{turn.first ? 'First question on this PR' : 'Follow-up'}</span>
+        <StatusIcon kind="loading" size={18} />
+        <ThinkingHeadline phase={phase} agent={agent} activity={NO_ACTIVITY} initial="Filling the pond…" />
+        <span className="muted small prep-meta">{turn.first ? 'First question' : 'Follow-up'}</span>
       </div>
-      <ol className="prep-steps">
-        {STEP_ORDER.map((step, i) => {
-          const entry = turn.steps.find((s) => s.step === step);
-          const next = turn.steps.find((s) => s.step === STEP_ORDER[i + 1]);
-          const state = i < currentIndex ? 'done' : i === currentIndex ? 'current' : 'waiting';
-          return (
-            <li key={step} className={state}>
-              <span className="prep-icon">
-                {state === 'done' ? <Check size={12} /> : state === 'current' ? <Spinner size={16} /> : <Circle size={16} />}
-              </span>
-              <span className="prep-label">{label(step, entry?.detail)}</span>
-              <span className="muted small prep-state">
-                {state === 'done' ? `Done${entry && next ? ` · ${duration(next.at - entry.at)}` : ''}` : state === 'current' ? 'In progress' : 'Waiting'}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-      <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={STEP_ORDER.length} aria-valuenow={currentIndex}>
-        <span style={{ width: `${((currentIndex + 0.5) / STEP_ORDER.length) * 100}%` }} />
+      <PrepSteps steps={steps} />
+      <div className="progress" role="progressbar" aria-label="Preparing" aria-valuemin={0} aria-valuemax={order.length} aria-valuenow={currentIndex}>
+        <span style={{ width: `${((currentIndex + 0.5) / order.length) * 100}%` }} />
       </div>
       <div className="row end">
         <button type="button" className="secondary" onClick={onCancel}>
           Cancel
         </button>
+      </div>
+    </section>
+  );
+}
+
+function DraftComment({
+  selections,
+  answer,
+  onCancel,
+  onConfirm,
+}: {
+  selections: CodeSelection[];
+  answer: string;
+  onCancel: () => void;
+  onConfirm: (selection: CodeSelection | null, text: string) => void;
+}) {
+  const [target, setTarget] = useState(0);
+  const [text, setText] = useState(() => ciCommentText(answer));
+  const id = useRef(`draft-${Math.random().toString(36).slice(2)}`).current;
+  const options = [...selections.map((s) => ({ label: selectionLabel(s).replace(' · ', ' · lines '), selection: s as CodeSelection | null })), { label: 'Whole PR (conversation)', selection: null }];
+  return (
+    <section className="draft" aria-labelledby={`${id}-h`}>
+      <div className="draft-head">
+        <h3 id={`${id}-h`} className="display">
+          Draft review comment
+        </h3>
+        <span className="muted small">Not posted. Yet.</span>
+      </div>
+      <div className="draft-body">
+        <label htmlFor={`${id}-on`}>Comment on</label>
+        <select id={`${id}-on`} className="mono" value={target} onChange={(e) => setTarget(Number(e.target.value))}>
+          {options.map((o, i) => (
+            <option key={i} value={i}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <label htmlFor={`${id}-text`}>Comment</label>
+        <textarea id={`${id}-text`} className="mono" rows={9} value={text} onChange={(e) => setText(e.target.value)} />
+        <p className="muted small">Markdown works. Edit freely; the duck won’t mind.</p>
+        <div className="row end">
+          <button type="button" className="secondary" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="primary" disabled={!text.trim()} onClick={() => onConfirm(options[target].selection, text)}>
+            Copy and open in GitHub
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -936,7 +1180,7 @@ function activitySummary(activity: string[]): string {
   const commands = count('Ran ');
   const other = activity.length - reads - searches - lists - commands;
   const parts = [
-    reads && `Read ${plural(reads, 'file', 'files')}`,
+    reads && `Paddled through ${plural(reads, 'file', 'files')}`,
     searches && plural(searches, 'search', 'searches'),
     lists && plural(lists, 'listing', 'listings'),
     commands && plural(commands, 'command', 'commands'),
@@ -945,20 +1189,21 @@ function activitySummary(activity: string[]): string {
   return parts.join(' · ');
 }
 
-function errorTitle(code: ErrorCode | 'disconnected', backend: string): string {
+/** The alert's headline: it may wink; the explanation under it stays plain. */
+function errorTitle(code: ErrorCode | 'disconnected', agent: string, seconds: number): string {
   switch (code) {
     case 'repo_not_found':
       return 'No local clone found';
     case 'fetch_failed':
       return 'Couldn’t fetch the PR';
-    case 'backend_not_installed':
-      return `${backend} isn’t installed`;
-    case 'backend_not_logged_in':
-      return `${backend} isn’t logged in`;
+    case 'agent_not_installed':
+      return `${agent} isn’t installed`;
+    case 'agent_not_logged_in':
+      return `${agent} isn’t logged in`;
     case 'timeout':
-      return `${backend} timed out`;
+      return `No reply in ${seconds} s. The duck went under.`;
     case 'agent_failed':
-      return `${backend} failed`;
+      return `${agent} failed`;
     case 'disconnected':
       return 'Companion disconnected';
     case 'version_mismatch':
@@ -970,8 +1215,9 @@ function errorTitle(code: ErrorCode | 'disconnected', backend: string): string {
 
 interface TurnActions {
   stop: () => void;
-  retry: (turn: Turn, backend?: BackendId) => void;
+  retry: (turn: Turn, agent?: AgentId) => void;
   recheck: () => void;
+  post: (selection: CodeSelection | null, text: string) => Promise<void>;
 }
 
 // Memoized so typing or picking lines in the diff doesn't re-render (and
@@ -980,34 +1226,47 @@ const TurnView = memo(function TurnView({
   turn,
   prNumber,
   link,
-  otherBackend,
+  otherAgent,
+  checks,
   actions,
+  latest,
 }: {
   turn: Turn;
   prNumber: number;
   link: RepoLink;
-  otherBackend?: BackendStatus;
+  otherAgent?: AgentStatus;
+  checks: CheckRun[];
   actions: TurnActions;
+  /** The newest turn gets the primary action. */
+  latest: boolean;
 }) {
   const onStop = actions.stop;
   const onRetry = () => actions.retry(turn);
   const onRecheck = actions.recheck;
-  const onRetryOther = (id: BackendId) => actions.retry(turn, id);
+  const onRetryOther = (id: AgentId) => actions.retry(turn, id);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [copied, setCopied] = useState(false);
   const isRunning = turn.status === 'running';
   const now = useNow(isRunning);
   const silent = isRunning && !turn.text && !turn.activity.length;
   const preparing = silent && turn.steps.at(-1)?.step !== 'thinking';
-  const elapsed = duration((turn.finishedAt ?? now) - turn.startedAt);
-  const label = backendLabel(turn.backend);
+  const elapsedMs = (turn.finishedAt ?? now) - turn.startedAt;
+  const elapsed = duration(elapsedMs);
+  const label = agentLabel(turn.agent);
+  const jobLogs = turn.task === 'explain_ci' ? (parseCiReport(turn.text).findings?.length ?? 0) : 0;
   const error = turn.error;
   const cancelled = error?.code === 'cancelled';
   const sha = turn.headSha ?? turn.steps.find((s) => s.step === 'preparing_worktree')?.detail;
 
+  useEffect(() => {
+    if (!copied) return;
+    const id = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(id);
+  }, [copied]);
+
   const meta = isRunning ? (
-    <>
-      <Spinner size={14} /> {preparing ? 'Resuming the conversation' : silent ? 'Thinking' : 'Answering'} · {elapsed}
-    </>
+    elapsed
   ) : turn.status === 'done' ? (
     <>
       {elapsed}
@@ -1039,24 +1298,36 @@ const TurnView = memo(function TurnView({
       </section>
 
       {preparing && turn.first ? (
-        <PrepCard turn={turn} prNumber={prNumber} onCancel={onStop} />
+        <PrepCard turn={turn} prNumber={prNumber} onCancel={onStop} now={now} />
       ) : (
         <section className="answer" aria-label="Answer">
           <div className="answer-head">
             <span className="badge">
-              {label} · {modelLabel(turn.backend, turn.model)}
+              {label} · {modelLabel(turn.agent, turn.model)}
+              {jobLogs > 0 && ` · read ${jobLogs} job ${jobLogs === 1 ? 'log' : 'logs'}`}
             </span>
             <span className="muted meta">{meta}</span>
           </div>
 
+          {isRunning && (
+            <div className="thinking">
+              <StatusIcon kind="loading" size={18} />
+              <ThinkingHeadline
+                phase={pickPhase({ preparing, activity: turn.activity, text: turn.text, elapsedMs, task: turn.task })}
+                agent={label}
+                activity={turn.activity}
+              />
+            </div>
+          )}
+
           {turn.activity.length > 0 &&
             (isRunning || activityOpen ? (
-              <ul className="activity">
+              <ul className="activity" aria-live="polite">
                 {turn.activity.map((a, i) => {
                   const live = isRunning && i === turn.activity.length - 1 && !turn.text;
                   return (
-                    <li key={i}>
-                      {live ? <Spinner size={14} /> : activityIcon(a)}
+                    <li key={i} className={live ? 'live' : ''}>
+                      {!isRunning && activityIcon(a)}
                       <span>{a}</span>
                     </li>
                   );
@@ -1076,7 +1347,31 @@ const TurnView = memo(function TurnView({
               </button>
             ))}
 
-          {turn.text && <Markdown text={turn.text} link={link} streaming={isRunning} />}
+          {turn.text && <AnswerBody text={turn.text} link={link} streaming={isRunning} checks={checks} />}
+
+          {turn.status === 'done' && turn.text && (drafting ? (
+            <DraftComment
+              selections={turn.selections}
+              answer={turn.text}
+              onCancel={() => setDrafting(false)}
+              onConfirm={(selection, text) => {
+                actions.post(selection, text).then(() => setDrafting(false), () => {});
+              }}
+            />
+          ) : (
+            <div className="row answer-actions">
+              <button type="button" className={latest ? 'primary' : 'secondary'} onClick={() => setDrafting(true)}>
+                Post as review comment
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => navigator.clipboard.writeText(ciCommentText(turn.text)).then(() => setCopied(true), () => {})}
+              >
+                {copied ? 'Copied' : 'Copy answer'}
+              </button>
+            </div>
+          ))}
 
           {error && cancelled && (
             <div className="row">
@@ -1088,39 +1383,35 @@ const TurnView = memo(function TurnView({
 
           {error && !cancelled && (
             <div className="error-card" role="alert">
-              <div className="error-title">
-                <ErrorCircle size={16} />
-                <span>
-                  <span className="err">Error</span> · <strong>{errorTitle(error.code, label)}</strong>
-                </span>
-              </div>
-              <p>{error.message}</p>
-              {error.fixSteps && error.fixSteps.length > 0 && <FixSteps steps={error.fixSteps} />}
-              <code className="error-meta">
-                {error.code}
-                {sha ? ` · worktree ${shortSha(sha)}` : ''}
-              </code>
-              <div className="row">
-                {(error.code === 'backend_not_installed' || error.code === 'backend_not_logged_in') && (
-                  <button type="button" className="secondary" onClick={onRecheck}>
-                    <Retry size={14} /> Re-check
+              <DuckError width={64} />
+              <div className="error-content">
+                <strong className="error-title">{errorTitle(error.code, label, Math.round(elapsedMs / 1000))}</strong>
+                <p className="muted small">{error.message}</p>
+                {error.fixSteps && error.fixSteps.length > 0 && <FixSteps steps={error.fixSteps} />}
+                <div className="row">
+                  {(error.code === 'agent_not_installed' || error.code === 'agent_not_logged_in') && (
+                    <button type="button" className="secondary" onClick={onRecheck}>
+                      Re-check
+                    </button>
+                  )}
+                  <button type="button" className="primary" onClick={onRetry}>
+                    Retry
                   </button>
-                )}
-                <button type="button" className="primary" onClick={onRetry}>
-                  <Retry size={14} /> Retry
-                </button>
-                {otherBackend && (
-                  <button type="button" className="secondary" onClick={() => onRetryOther(otherBackend.id)}>
-                    Retry with {otherBackend.label}
+                  {otherAgent && (
+                    <button type="button" className="secondary" onClick={() => onRetryOther(otherAgent.id)}>
+                      Try {otherAgent.label}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() =>
+                      navigator.clipboard.writeText(`${error.code}: ${error.message}${sha ? ` (worktree ${sha})` : ''}`)
+                    }
+                  >
+                    Copy log
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => navigator.clipboard.writeText(`${error.code}: ${error.message}${sha ? ` (worktree ${sha})` : ''}`)}
-                >
-                  Copy log
-                </button>
+                </div>
               </div>
             </div>
           )}

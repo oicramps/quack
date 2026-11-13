@@ -25,6 +25,7 @@ function isGitDir(dir: string): boolean {
   }
 }
 
+/** Collects git repository directories up to two levels beneath `roots`. */
 function candidateDirs(roots: string[]): string[] {
   const out: string[] = [];
   for (const root of roots) {

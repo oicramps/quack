@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { BackendStatus, FixStep } from '@quack/shared';
+import type { AgentStatus, FixStep } from '@quack/shared';
 import { findBinary, run } from '../exec.ts';
 import { HOME } from '../paths.ts';
 import { clip, relativeTo, runJsonLines, stripAnsi } from './stream.ts';
@@ -50,11 +50,9 @@ function summarizeTool(name: string, input: Record<string, unknown>, cwd: string
 }
 
 /**
- * Claude Code's stream-json (with --verbose): `system` init, `assistant` messages
- * with text and tool_use blocks, `user` tool results and a final `result`. With
- * --include-partial-messages, `stream_event` lines carry text deltas, and the
- * full assistant text is then skipped to avoid printing it twice. In plan mode the
- * answer may arrive as an ExitPlanMode tool call, whose plan is shown as text.
+ * Parses Claude Code `--output-format stream-json --verbose` output.
+ * Emits partial text deltas from `stream_event` when present, skips duplicate
+ * full `assistant` text blocks, and extracts plan text from `ExitPlanMode` tool calls.
  */
 export function createClaudeParser(cwd: string): LineParser {
   let partial = false;
@@ -110,7 +108,7 @@ export const claudeAdapter: Adapter = {
   id: 'claude-code',
   label: 'Claude Code',
 
-  async isAvailable(): Promise<BackendStatus> {
+  async isAvailable(): Promise<AgentStatus> {
     const bin = findBinary(['claude']);
     if (!bin) {
       return {

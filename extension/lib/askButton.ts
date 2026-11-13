@@ -1,26 +1,32 @@
-// Quack's only UI inside GitHub's page: a floating "Ask AI" button above the
+// Quack's only UI inside GitHub's page: a floating "Ask Quack" button above the
 // selected diff lines. It lives in a shadow root so GitHub's styles don't reach it.
+import logo from '../assets/brand/quack-logo-on-dark.svg?raw';
 
 const SHORTCUT = /Mac/.test(navigator.platform) ? '⌘⇧K' : 'Ctrl+Shift+K';
 
-const ICON =
-  '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>';
+const ICON = `<span class="badge">${logo.replace(/\s(role|aria-label)="[^"]*"/g, '').replace('<svg', '<svg aria-hidden="true" width="15" height="10"')}</span>`;
 
-// Colors from the panel design: the single blue accent, white text.
+// The logo sits on an ink circle because the duck would vanish into a yellow fill. Same in light and dark.
 const STYLE = `
   :host { all: initial; }
   button {
-    display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box;
-    height: 28px; padding: 0 6px 0 10px; border: 0; border-radius: 6px;
-    font: 600 12px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
-    color: #ffffff; background: #0074ad; cursor: pointer; white-space: nowrap;
-    box-shadow: 0 1px 2px rgb(0 41 61 / 20%), 0 4px 12px rgb(0 41 61 / 18%);
+    display: flex; align-items: center; gap: 8px; box-sizing: border-box;
+    height: 30px; margin: 0; padding: 0 6px 0 4px; border: 1px solid #d4a72c; border-radius: 6px;
+    font: 700 12px/20px -apple-system, system-ui, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    color: #1c222e; background: #f2c94c; cursor: pointer; white-space: nowrap;
+    box-shadow: 0 4px 8px rgb(0 0 0 / 20%);
   }
-  button:hover { filter: brightness(1.08); }
-  button:focus-visible { outline: 2px solid #0099e5; outline-offset: 2px; }
+  button:hover { filter: brightness(1.04); }
+  button:focus-visible { outline: none; box-shadow: 0 4px 8px rgb(0 0 0 / 20%), 0 0 0 2px #0099e5; }
+  .badge {
+    display: flex; align-items: center; justify-content: center; flex: none;
+    width: 24px; height: 24px; border-radius: 999px; background: #1c222e;
+  }
+  .badge svg { display: block; }
   kbd {
-    font: inherit; font-weight: 600; font-size: 11px; line-height: 16px; padding: 0 4px;
-    border-radius: 4px; background: rgb(255 255 255 / 18%);
+    display: block; height: 18px; padding: 0 5px; border: 0; border-radius: 4px;
+    font: 700 11px/18px -apple-system, system-ui, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    color: inherit; background: rgb(28 34 46 / 12%);
   }
 `;
 
@@ -36,11 +42,11 @@ const MARGIN = 8;
 export function createFloatingButton(onAsk: () => void): FloatingButton {
   const host = document.createElement('quack-ask');
   const root = host.attachShadow({ mode: 'closed' });
-  root.innerHTML = `<style>${STYLE}</style><button type="button" title="Ask Quack about the selected lines (${SHORTCUT})">${ICON}<span>Ask AI</span><kbd>${SHORTCUT}</kbd></button>`;
-  const label = root.querySelector('span')!;
+  root.innerHTML = `<style>${STYLE}</style><button type="button" title="Ask Quack about the selected lines (${SHORTCUT})">${ICON}<span>Ask Quack</span><kbd>${SHORTCUT}</kbd></button>`;
+  const button = root.querySelector('button')!;
   // Keep the diff's text selection when the button is pressed.
   host.addEventListener('mousedown', (e) => e.preventDefault());
-  root.querySelector('button')!.addEventListener('click', (e) => {
+  button.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     onAsk();
@@ -51,7 +57,7 @@ export function createFloatingButton(onAsk: () => void): FloatingButton {
 
   return {
     showAbove(top, right, lines) {
-      label.textContent = lines ? `Ask AI about ${lines}` : 'Ask AI';
+      button.title = lines ? `Ask Quack about ${lines} (${SHORTCUT})` : `Ask Quack (${SHORTCUT})`;
       host.style.display = 'block';
       const { width, height } = host.getBoundingClientRect();
       const y = top - height - 4;

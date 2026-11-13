@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" width="240" height="180" fill="none" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Duck with its head under water, feet in the air">
+  <circle class="backdrop" cx="120" cy="90" r="78" fill="#fff4e6"/>
+  <circle cx="50" cy="108" r="6" fill="#ffffff" stroke="#1c222e" stroke-width="4"/>
+  <circle cx="36" cy="88" r="8" fill="#ffffff" stroke="#1c222e" stroke-width="4"/>
+  <circle cx="54" cy="72" r="4.5" fill="#ffffff" stroke="#1c222e" stroke-width="4"/>
+  <path d="M108 82L100 52M136 80L144 52" stroke="#1c222e" stroke-width="12"/>
+  <path d="M108 82L100 52M136 80L144 52" stroke="#ff980f" stroke-width="5"/>
+  <path d="M84 50C90 40 104 40 112 46L101 56Z" fill="#ff980f" stroke="#1c222e" stroke-width="5"/>
+  <path d="M132 46C140 40 154 40 160 50L143 56Z" fill="#ff980f" stroke="#1c222e" stroke-width="5"/>
+  <path d="M66 130C66 98 92 78 124 78C150 78 170 92 176 110L186 90C194 100 196 118 190 130Z" fill="#ffcc33" stroke="#1c222e" stroke-width="6"/>
+  <path d="M102 112C114 100 138 98 154 106C142 120 116 122 102 112Z" fill="#f5b400" stroke="#1c222e" stroke-width="5"/>
+  <path d="M94 96C98 90 104 86 110 84" stroke="#ffffff" stroke-opacity="0.85" stroke-width="4"/>
+  <ellipse cx="204" cy="108" rx="3.5" ry="5" fill="#0099e5" stroke="#1c222e" stroke-width="3" transform="rotate(25 204 108)"/>
+  <path d="M14 128Q34 116 54 128T94 128T134 128T174 128T214 128T234 128V170H14Z" fill="#0099e5"/>
+  <path d="M14 128Q34 116 54 128T94 128T134 128T174 128T214 128T234 128" stroke="#1c222e" stroke-width="6"/>
+  <path d="M40 150Q56 143 72 150T104 150T136 150T168 150T196 150" stroke="#ffffff" stroke-opacity="0.5" stroke-width="4"/>
+</svg>

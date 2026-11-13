@@ -1,6 +1,6 @@
 {
   "name": "quack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Ask Claude Code or Cursor about a GitHub PR's code from the PR page, without checking it out.",
   "workspaces": [
@@ -9,10 +9,11 @@
     "extension"
   ],
   "scripts": {
-    "build": "npm run build -w companion && npm run build -w extension",
-    "dev": "npm run dev -w extension",
-    "install-host": "npm run install-host -w companion",
-    "test": "npm test -w companion",
-    "typecheck": "npm run typecheck -w companion && npm run typecheck -w extension"
-  }
+    "build": "yarn workspace quack-companion build && yarn workspace @quack/extension build",
+    "dev": "yarn workspace @quack/extension dev",
+    "install-host": "yarn workspace quack-companion install-host",
+    "test": "yarn workspace quack-companion test",
+    "typecheck": "yarn workspace quack-companion typecheck && yarn workspace @quack/extension typecheck"
+  },
+  "packageManager": "yarn@1.22.19+sha1.4ba7fc5c6e704fce2066ecbfb0b0d8976fe62447"
 }

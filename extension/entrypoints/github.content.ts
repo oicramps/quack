@@ -7,28 +7,29 @@ import {
   githubTheme,
   lineElementFor,
   lineNumberFor,
+  openCommentFor,
   parsePrUrl,
   readBaseRef,
   readHeadRef,
   readCommentBoxSelection,
   readDiffSelection,
   readHashSelection,
+  readHeadSha,
   readPrStats,
   readPrTitle,
 } from '../lib/github';
 import type { RuntimeMessage, TabRequest } from '../lib/messages';
 import type { PageContext } from '../lib/page';
 
-/** Fields missing from a fresh read keep their earlier value. */
+/** Merges `fresh` into `known`, preserving previous values when a field is `undefined`. */
 function keepKnown<T extends object>(fresh: T, known: T): T {
   const out = { ...known } as Record<string, unknown>;
   for (const [k, v] of Object.entries(fresh)) if (v !== undefined) out[k] = v;
   return out as T;
 }
 
-// Reports the PR, the latest diff selection and the theme to the side panel,
-// and shows a floating "Ask AI" button above the selected lines.
-// The panel itself lives in Chrome's side panel, not in the page.
+// Tracks PR metadata, diff selections, and theme on github.com and renders the
+// floating "Ask Quack" button in a closed Shadow DOM root.
 export default defineContentScript({
   // All of github.com, because GitHub navigates to PRs without a page load.
   matches: ['https://github.com/*'],
@@ -66,7 +67,7 @@ export default defineContentScript({
       const prChanged = pr?.number !== context.pr?.number || pr?.repo !== context.pr?.repo || pr?.owner !== context.pr?.owner;
       // GitHub re-renders parts of the page as lines are picked, so a read can
       // briefly miss the title or counts; keep what this PR already showed.
-      const fresh = pr && { ...pr, title: readPrTitle(), baseRef: readBaseRef(), headRef: readHeadRef(), ...readPrStats() };
+      const fresh = pr && { ...pr, title: readPrTitle(), baseRef: readBaseRef(), headRef: readHeadRef(), latestSha: readHeadSha(), ...readPrStats() };
       context = {
         pr: fresh && context.pr && !prChanged ? keepKnown(fresh, context.pr) : fresh,
         lastSelection: (pr && pickedLines()) || (prChanged ? null : context.lastSelection),
@@ -212,6 +213,10 @@ export default defineContentScript({
         sendResponse(context);
       } else if (msg?.kind === 'get-selection') {
         sendResponse(readDiffSelection() ?? pickedLines() ?? context.lastSelection);
+      } else if (msg?.kind === 'open-comment') {
+        // The hash this sets is ours, not a pick by the user.
+        sendResponse(openCommentFor(msg.selection));
+        loadedHash = location.hash;
       }
       return false;
     };

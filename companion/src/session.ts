@@ -1,17 +1,19 @@
-import type { AgentEvent, AskRequest, BackendStatus, CompanionMessage, ErrorCode, FixStep, ProgressStep } from '@quack/shared';
+import type { AgentEvent, AskRequest, AgentStatus, CompanionMessage, ErrorCode, FixStep, ProgressStep } from '@quack/shared';
 import { AGENT_TIMEOUT_MS } from '@quack/shared';
 import { adapters } from './adapters/index.ts';
+import { collectCi } from './checks.ts';
 import { loadConfig } from './config.ts';
 import { log } from './log.ts';
-import { buildFollowUp, buildPrompt } from './prompt.ts';
+import { buildCiPrompt, buildFollowUp, buildPrompt } from './prompt.ts';
 import { type PrContext, prDiff, resolvePr } from './pr.ts';
 import { findClone } from './repo.ts';
 import { resolveSelections } from './selection.ts';
 import { acquireLock, changedFiles, prepareWorktree, worktreePath } from './worktree.ts';
 
 export type Send = (message: CompanionMessage) => void;
-export type GetStatus = (backend: AskRequest['backend']) => Promise<BackendStatus>;
+export type GetStatus = (agent: AskRequest['agent']) => Promise<AgentStatus>;
 
+/** Cached PR commit and metadata keyed by `<clonePath>#<prNumber>` for session follow-ups. */
 const prContexts = new Map<string, PrContext>();
 
 class AskError extends Error {
@@ -24,6 +26,11 @@ class AskError extends Error {
   }
 }
 
+/**
+ * Executes an `ask` request: locates the local clone, fetches the PR head,
+ * prepares an isolated detached worktree, constructs the prompt, and streams
+ * agent events back to the extension.
+ */
 export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal, getStatus: GetStatus): Promise<void> {
   const { requestId, pr } = req;
   const started = Date.now();
@@ -39,11 +46,11 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
   const agentSignal = AbortSignal.any([signal, timeout.signal]);
 
   try {
-    const adapter = adapters[req.backend];
+    const adapter = adapters[req.agent];
     const config = loadConfig();
 
     progress('finding_repo');
-    const statusPromise = getStatus(req.backend);
+    const statusPromise = getStatus(req.agent);
     const clone = await findClone(config, pr.owner, pr.repo);
     if (!clone) {
       throw new AskError('repo_not_found', `No local clone of ${pr.owner}/${pr.repo} was found.`, [
@@ -53,13 +60,13 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
     }
 
     const status = await statusPromise;
-    if (status.state === 'not_installed') throw new AskError('backend_not_installed', `${adapter.label} is not installed.`, status.fixSteps);
-    if (status.state === 'not_logged_in') throw new AskError('backend_not_logged_in', `${adapter.label} is not logged in.`, status.fixSteps);
+    if (status.state === 'not_installed') throw new AskError('agent_not_installed', `${adapter.label} is not installed.`, status.fixSteps);
+    if (status.state === 'not_logged_in') throw new AskError('agent_not_logged_in', `${adapter.label} is not logged in.`, status.fixSteps);
     if (signal.aborted) throw new AskError('cancelled', 'Stopped.');
 
     progress('fetching_pr');
-    // A follow-up stays on the commit its thread started on, which this host
-    // fetched moments ago; only a new thread fetches the PR again.
+    // Reuse cached PR context when resuming an existing session so follow-ups
+    // inspect the same commit without re-fetching from origin.
     const cacheKey = `${clone}#${pr.number}`;
     let ctx = req.sessionId ? prContexts.get(cacheKey) : undefined;
     if (!ctx) {
@@ -87,8 +94,34 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
     const selections = await resolveSelections(clone, ctx.baseSha, ctx.headSha, req.selections);
 
     let prompt: string;
-    if (req.sessionId) {
-      log(requestId, 'resuming session', req.sessionId);
+    if (req.sessionId) log(requestId, 'resuming session', req.sessionId);
+    if (req.task === 'explain_ci') {
+      progress('fetching_ci');
+      const ci = await collectCi(pr, signal);
+      if (signal.aborted) throw new AskError('cancelled', 'Stopped.');
+      const { diff, truncated } = await prDiff(clone, ctx.baseSha, ctx.headSha);
+      prompt = buildCiPrompt({
+        owner: pr.owner,
+        repo: pr.repo,
+        prNumber: pr.number,
+        title: ctx.title,
+        body: ctx.body,
+        baseSha: ctx.baseSha,
+        headSha: ctx.headSha,
+        diff,
+        diffTruncated: truncated,
+        selections,
+        question: req.question,
+        logsUnavailable: !ci.available,
+        checks: ci.checks.map(({ check, log, recent }) => ({
+          name: check.name,
+          workflow: check.workflow,
+          link: check.link,
+          log,
+          recent,
+        })),
+      });
+    } else if (req.sessionId) {
       prompt = buildFollowUp(selections, req.question);
     } else {
       const { diff, truncated } = await prDiff(clone, ctx.baseSha, ctx.headSha);
@@ -104,6 +137,7 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
         diffTruncated: truncated,
         selections,
         question: req.question,
+        history: req.history,
       });
     }
 

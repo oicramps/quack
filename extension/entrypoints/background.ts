@@ -11,7 +11,7 @@ export default defineBackground(() => {
   // The toolbar icon opens Chrome's side panel.
   browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
-  // Cmd/Ctrl+Shift+K and the in-page "Ask AI" button open the panel and attach
+  // Cmd/Ctrl+Shift+K and the in-page "Ask Quack" button open the panel and attach
   // the selected diff lines. sidePanel.open needs the user gesture, so it is
   // called before anything asynchronous.
   let pendingAttach: { tabId: number; selection: CodeSelection | null } | null = null;
@@ -43,11 +43,11 @@ export default defineBackground(() => {
     return false;
   });
 
-  // One native port per browser session, shared by every side panel. It opens
-  // on the first request and closes when the last panel goes away, which lets
-  // Chrome stop the companion.
+  // Multiplex a single native messaging port across all open side panels.
+  // Opens on first request and disconnects when the last panel closes.
   let native: Port | null = null;
   const panels = new Set<Port>();
+  /** Maps in-flight `requestId` -> originating side panel port. */
   const owners = new Map<string, Port>();
 
   const post = (port: Port, message: FromBackground) => {

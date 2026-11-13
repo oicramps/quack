@@ -26,8 +26,8 @@ async function readLines(clone: string, sha: string, path: string, start: number
 }
 
 /**
- * Fills in what the page couldn't provide: the file path (from GitHub's anchor
- * hash) and the selected code (from the PR's base or head commit).
+ * Resolves selection file paths (by matching GitHub's SHA-256 diff anchor against
+ * changed paths) and loads missing snippet text from the base or head commit.
  */
 export async function resolveSelections(
   clone: string,

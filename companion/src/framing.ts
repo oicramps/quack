@@ -1,8 +1,8 @@
-// Chrome native messaging: each message is a 32-bit length in native byte order
-// (little-endian on every platform Quack supports) followed by UTF-8 JSON.
+// Chrome Native Messaging framing: 32-bit little-endian byte length followed by UTF-8 JSON.
 
 const MAX_INCOMING = 64 * 1024 * 1024;
 
+/** Encodes a payload into a length-prefixed native messaging frame. */
 export function encodeMessage(message: unknown): Buffer {
   const body = Buffer.from(JSON.stringify(message), 'utf8');
   const header = Buffer.alloc(4);
@@ -10,10 +10,11 @@ export function encodeMessage(message: unknown): Buffer {
   return Buffer.concat([header, body]);
 }
 
+/** Stream decoder for length-prefixed JSON frames that may arrive split across chunks. */
 export class MessageDecoder {
   private buffer = Buffer.alloc(0);
 
-  /** Feeds a chunk and returns every complete message it finished. */
+  /** Appends a chunk and returns all complete decoded JSON messages. */
   push(chunk: Buffer): unknown[] {
     this.buffer = Buffer.concat([this.buffer, chunk]);
     const messages: unknown[] = [];

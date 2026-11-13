@@ -1,4 +1,4 @@
-import type { BackendId, BackendStatus } from '@quack/shared';
+import type { AgentId, AgentStatus } from '@quack/shared';
 
 export interface AskOpts {
   cwd: string;
@@ -17,9 +17,9 @@ export type AdapterEvent =
   | { type: 'error'; message: string };
 
 export interface Adapter {
-  id: BackendId;
+  id: AgentId;
   label: string;
-  isAvailable(): Promise<BackendStatus>;
+  isAvailable(): Promise<AgentStatus>;
   ask(opts: AskOpts): AsyncIterable<AdapterEvent>;
   /** Stops the process kept open for a session, if any. */
   closeSession?(sessionId: string): void;

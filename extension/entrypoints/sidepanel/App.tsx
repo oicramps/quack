@@ -93,6 +93,6 @@ export function App() {
     document.body.dataset.theme = context.theme;
   }, [context.theme]);
 
-  const page: PanelPage = { ...context, attachRequest, notice };
+  const page: PanelPage = { ...context, tabId, attachRequest, notice };
   return <Panel page={page} client={client} />;
 }

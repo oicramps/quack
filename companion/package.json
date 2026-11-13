@@ -1,25 +1,52 @@
 {
-  "name": "@quack/companion",
-  "version": "0.1.0",
-  "private": true,
+  "name": "quack-companion",
+  "version": "0.2.0",
+  "description": "Local companion for Quack. Runs your own AI agent (Claude Code or Cursor) against a GitHub PR in an isolated worktree.",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oicramps/quack.git",
+    "directory": "companion"
+  },
+  "homepage": "https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj",
+  "bugs": {
+    "url": "https://github.com/oicramps/quack/issues"
+  },
+  "keywords": [
+    "quack",
+    "github",
+    "pull-request",
+    "code-review",
+    "claude-code",
+    "cursor",
+    "chrome-extension"
+  ],
   "bin": {
     "quack-companion": "dist/quack-companion.cjs"
   },
+  "files": [
+    "dist/quack-companion.cjs",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/quack-companion.cjs",
-    "install-host": "npm run build && node dist/quack-companion.cjs install",
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node20 --format=cjs --banner:js='#!/usr/bin/env node' --outfile=dist/quack-companion.cjs && chmod +x dist/quack-companion.cjs",
+    "install-host": "yarn build && node dist/quack-companion.cjs install",
     "uninstall-host": "node dist/quack-companion.cjs uninstall",
     "prune": "node dist/quack-companion.cjs prune",
     "doctor": "node dist/quack-companion.cjs doctor",
-    "harness": "npm run build && node scripts/harness.mjs",
+    "harness": "yarn build && node scripts/harness.mjs",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc -p ."
   },
-  "dependencies": {
-    "@quack/shared": "0.1.0"
-  },
   "devDependencies": {
+    "@quack/shared": "0.2.0",
     "@types/node": "^22.10.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.8.0"

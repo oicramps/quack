@@ -1,7 +1,7 @@
 // Talks to the built companion over the same stdio framing Chrome uses.
 //
 //   node scripts/harness.mjs status
-//   node scripts/harness.mjs ask --pr ProjetoParcas/mynah#14 --backend cursor \
+//   node scripts/harness.mjs ask --pr ProjetoParcas/mynah#14 --agent cursor \
 //     --question "Do we already have something that does this?" \
 //     [--path src/x.ts --start 10 --end 20] [--model gpt-5] [--session <id>] [--cancel-after 5000]
 
@@ -87,7 +87,7 @@ if (command === 'status') {
   send({
     type: 'ask',
     requestId: 'h-ask',
-    backend: opts.backend ?? 'cursor',
+    agent: opts.agent ?? 'cursor',
     model: opts.model ?? '',
     pr: { owner: m[1], repo: m[2], number: Number(m[3]) },
     selections,

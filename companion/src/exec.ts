@@ -3,15 +3,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EXTRA_BIN_DIRS } from './paths.ts';
 
+/** Builds a `PATH` string combining the active Node binary directory, `process.env.PATH`, and standard user/system bin directories. */
 export function searchPath(): string {
   const dirs = [path.dirname(process.execPath), ...(process.env.PATH ?? '').split(':'), ...EXTRA_BIN_DIRS];
   return [...new Set(dirs.filter(Boolean))].join(':');
 }
 
+/** Environment for child processes: expanded `PATH`, non-interactive git prompts, and color disabled. */
 export function childEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: searchPath(), GIT_TERMINAL_PROMPT: '0', NO_COLOR: '1' };
 }
 
+/** Resolves the first executable matching `names` on `searchPath()`. */
 export function findBinary(names: string[]): string | null {
   for (const dir of searchPath().split(':')) {
     for (const name of names) {
@@ -58,11 +61,12 @@ export function run(
   });
 }
 
+/** Spawns a child process in its own process group (`detached: true`) with piped stdout/stderr. */
 export function spawnStreaming(file: string, args: string[], cwd: string, opts: { stdin?: boolean } = {}): ChildProcess {
   return spawn(file, args, { cwd, env: childEnv(), stdio: [opts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], detached: true });
 }
 
-/** Kills the child and anything it started (it runs in its own process group). */
+/** Terminates the child's process group with SIGTERM, escalating to SIGKILL after 3s. */
 export function killTree(child: ChildProcess): void {
   if (child.exitCode !== null || child.pid === undefined) return;
   try {

@@ -1,15 +1,15 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import type { BackendId, BackendState, BackendStatus } from '@quack/shared';
+import type { AgentId, AgentState, AgentStatus } from '@quack/shared';
 import { FixSteps } from './FixSteps';
-import { Check, ChevronDown, Retry, Search } from './icons';
+import { Check, ChevronDown, Search } from './icons';
 
-const STATE_LABEL: Record<BackendState, string> = {
+const STATE_LABEL: Record<AgentState, string> = {
   ready: 'Ready',
   not_logged_in: 'Not logged in',
   not_installed: 'Not installed',
 };
 
-export function backendLabel(id: BackendId): string {
+export function agentLabel(id: AgentId): string {
   return id === 'cursor' ? 'Cursor' : 'Claude Code';
 }
 
@@ -47,7 +47,7 @@ function Menu({
   open,
   setOpen,
   disabled,
-  align = 'left',
+  variant,
   children,
 }: {
   label: string;
@@ -55,12 +55,12 @@ function Menu({
   open: boolean;
   setOpen: (open: boolean) => void;
   disabled?: boolean;
-  align?: 'left' | 'right';
+  variant: 'agent' | 'claude' | 'searchable';
   children: ReactNode;
 }) {
   const ref = useDismiss(open, () => setOpen(false));
   return (
-    <div className="menu" ref={ref}>
+    <div className={`menu ${variant === 'claude' ? 'anchored' : ''}`} ref={ref}>
       <button
         type="button"
         className={`picker-button ${open ? 'open' : ''}`}
@@ -73,7 +73,7 @@ function Menu({
         {button}
         <ChevronDown size={14} />
       </button>
-      {open && <div className={`menu-popover ${align}`}>{children}</div>}
+      {open && <div className={`menu-popover ${variant}`}>{children}</div>}
     </div>
   );
 }
@@ -85,11 +85,11 @@ function secondsAgo(at: number | null, now: number): string {
 }
 
 /**
- * Every backend is listed. Ones that aren't ready can't be picked; they say
+ * Every agent is listed. Ones that aren't ready can't be picked; they say
  * why and expand into the commands that fix it.
  */
-export function BackendPicker({
-  backends,
+export function AgentPicker({
+  agents,
   selected,
   companionVersion,
   checkedAt,
@@ -98,22 +98,22 @@ export function BackendPicker({
   onRecheck,
   onOpenChange,
 }: {
-  backends: BackendStatus[];
-  selected: BackendId;
+  agents: AgentStatus[];
+  selected: AgentId;
   companionVersion?: string;
   checkedAt: number | null;
   offline: boolean;
-  onSelect: (id: BackendId) => void;
+  onSelect: (id: AgentId) => void;
   onRecheck: () => void;
   onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpenState] = useState(false);
-  const [expanded, setExpanded] = useState<BackendId | null>(null);
+  const [expanded, setExpanded] = useState<AgentId | null>(null);
   const setOpen = (o: boolean) => {
     setOpenState(o);
     onOpenChange?.(o);
   };
-  const current = backends.find((b) => b.id === selected);
+  const current = agents.find((b) => b.id === selected);
 
   const button = offline ? (
     <>
@@ -121,18 +121,18 @@ export function BackendPicker({
     </>
   ) : (
     <>
-      <StatusDot tone={!current ? 'idle' : current.state === 'ready' ? 'ok' : 'warn'} /> {current?.label ?? backendLabel(selected)}
+      <StatusDot tone={!current ? 'idle' : current.state === 'ready' ? 'ok' : 'warn'} /> {current?.label ?? agentLabel(selected)}
     </>
   );
 
   return (
-    <Menu label="AI backend" button={button} open={open} setOpen={setOpen} disabled={offline || !backends.length}>
+    <Menu label="Agent" variant="agent" button={button} open={open} setOpen={setOpen} disabled={offline || !agents.length}>
       <div className="menu-head">
-        <span className="menu-title">Backend</span>
-        {companionVersion && <span className="muted">Companion v{companionVersion} · connected</span>}
+        <span className="menu-title">Agent</span>
+        {companionVersion && <span>Companion v{companionVersion} · connected</span>}
       </div>
-      <div role="listbox" aria-label="AI backend">
-        {backends.map((b) => {
+      <div role="listbox" aria-label="Agents">
+        {agents.map((b) => {
           const ready = b.state === 'ready';
           const isSelected = b.id === selected;
           const showFix = !ready && (expanded === b.id || isSelected);
@@ -171,9 +171,9 @@ export function BackendPicker({
       <Now>
         {(now) => (
           <div className="menu-foot">
-            <span className="muted">{secondsAgo(checkedAt, now)}</span>
+            <span>{secondsAgo(checkedAt, now)}</span>
             <button type="button" className="link" onClick={onRecheck}>
-              <Retry size={14} /> Re-check
+              Re-check
             </button>
           </div>
         )}
@@ -198,9 +198,9 @@ const CLAUDE_MODELS: Record<string, { name: string; description: string }> = {
 };
 const CLAUDE_ORDER = ['opus', 'sonnet', 'haiku'];
 
-export function modelLabel(backend: BackendId, model: string): string {
+export function modelLabel(agent: AgentId, model: string): string {
   if (!model) return 'Default model';
-  return backend === 'claude-code' ? CLAUDE_MODELS[model]?.name ?? model : model;
+  return agent === 'claude-code' ? CLAUDE_MODELS[model]?.name ?? model : model;
 }
 
 export function ModelPicker({
@@ -210,14 +210,14 @@ export function ModelPicker({
   disabled,
   onChange,
 }: {
-  status?: BackendStatus;
+  status?: AgentStatus;
   model: string;
   recent: string[];
   disabled?: boolean;
   onChange: (model: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const backend = status?.id ?? 'cursor';
+  const agent = status?.id ?? 'cursor';
   const pick = (m: string) => {
     onChange(m);
     setOpen(false);
@@ -225,12 +225,13 @@ export function ModelPicker({
   return (
     <Menu
       label="Model"
-      button={<span className={backend === 'cursor' ? 'mono' : ''}>{modelLabel(backend, model)}</span>}
+      variant={agent === 'claude-code' ? 'claude' : 'searchable'}
+      button={<span className={agent === 'cursor' ? 'mono' : ''}>{modelLabel(agent, model)}</span>}
       open={open}
       setOpen={setOpen}
       disabled={disabled || !status}
     >
-      {status && open && (backend === 'claude-code' ? (
+      {status && open && (agent === 'claude-code' ? (
         <ClaudeModels status={status} model={model} onPick={pick} />
       ) : (
         <SearchableModels status={status} model={model} recent={recent} onPick={pick} />
@@ -239,7 +240,7 @@ export function ModelPicker({
   );
 }
 
-function ClaudeModels({ status, model, onPick }: { status: BackendStatus; model: string; onPick: (m: string) => void }) {
+function ClaudeModels({ status, model, onPick }: { status: AgentStatus; model: string; onPick: (m: string) => void }) {
   const [custom, setCustom] = useState(CLAUDE_MODELS[model] ? '' : model);
   const ids = [...CLAUDE_ORDER.filter((m) => status.models.includes(m)), ...status.models.filter((m) => !CLAUDE_ORDER.includes(m))];
   return (
@@ -312,7 +313,7 @@ function SearchableModels({
   recent,
   onPick,
 }: {
-  status: BackendStatus;
+  status: AgentStatus;
   model: string;
   recent: string[];
   onPick: (m: string) => void;
@@ -336,31 +337,33 @@ function SearchableModels({
   return (
     <>
       <div className="menu-search">
-        <Search size={16} />
-        <input
-          autoFocus
-          value={query}
-          placeholder="Search models"
-          aria-label="Search models"
-          spellCheck={false}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              setActive((a) => Math.min(a + 1, matches.length - 1));
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault();
-              setActive((a) => Math.max(a - 1, 0));
-            } else if (e.key === 'Enter') {
-              e.preventDefault();
-              if (matches[active] !== undefined) onPick(matches[active]);
-              else if (query.trim()) onPick(query.trim());
-            }
-          }}
-        />
-        <span className="muted small">
-          {matches.length} of {status.models.length}
-        </span>
+        <div className="menu-search-field">
+          <Search size={14} />
+          <input
+            autoFocus
+            value={query}
+            placeholder="Search models"
+            aria-label="Search models"
+            spellCheck={false}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setActive((a) => Math.min(a + 1, matches.length - 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActive((a) => Math.max(a - 1, 0));
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (matches[active] !== undefined) onPick(matches[active]);
+                else if (query.trim()) onPick(query.trim());
+              }
+            }}
+          />
+          <span className="menu-search-count">
+            {matches.length} of {status.models.length}
+          </span>
+        </div>
       </div>
       <div className="menu-list" role="listbox" aria-label="Model" ref={listRef}>
         {matches.map((m, i) => (
@@ -370,13 +373,13 @@ function SearchableModels({
             role="option"
             data-index={i}
             aria-selected={m === model}
-            className={`menu-item mono ${i === active ? 'active' : ''}`}
+            className={`menu-item mono ${m === model ? 'selected' : i === active ? 'active' : ''}`}
             onMouseEnter={() => setActive(i)}
             onClick={() => onPick(m)}
           >
             <span className="check">{m === model && <Check size={16} />}</span>
             <span className="menu-item-label">{m ? highlight(m, query.trim()) : 'Default model'}</span>
-            {m === model && <span className="muted small">Current</span>}
+            {m === model && <span className="menu-current">Current</span>}
           </button>
         ))}
         {!matches.length && query.trim() && (
@@ -399,8 +402,8 @@ function SearchableModels({
         </div>
       )}
       <div className="menu-foot">
-        <span className="muted">{status.hint ? 'Built-in list' : `Live list from ${status.label}`}</span>
-        <span className="muted">↑↓ move · ↵ pick</span>
+        <span>Models from {status.label}</span>
+        <span>↑↓ move · ↵ pick</span>
       </div>
     </>
   );

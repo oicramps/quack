@@ -15,7 +15,7 @@
     <div class="grid" id="grid"></div>
     <script type="module">
       const theme = new URLSearchParams(location.search).get('theme') ?? 'light';
-      const scenarios = ['no-pr', 'loading', 'empty', 'selection', 'preparing', 'streaming', 'done', 'error', 'not-installed', 'backend-menu', 'model-menu', 'offline'];
+      const scenarios = ['no-pr', 'loading', 'empty', 'empty-ci', 'explain-ci', 'selection', 'preparing', 'streaming', 'done', 'error', 'not-installed', 'agent-menu', 'model-menu', 'offline', 'stale', 'draft', 'posted', 'error-timeout', 'switch'];
       for (const s of scenarios) {
         const fig = document.createElement('figure');
         fig.innerHTML = `<figcaption>${s}</figcaption><iframe src="./index.html?scenario=${s}&theme=${theme}"></iframe>`;

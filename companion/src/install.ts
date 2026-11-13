@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { EXTENSION_ID, HOST_NAME } from '@quack/shared';
+import { ALLOWED_EXTENSION_IDS, HOST_NAME } from '@quack/shared';
 import { BIN_DIR, HOME } from './paths.ts';
 
 function manifestDirs(): string[] {
@@ -43,7 +43,7 @@ export function install(bundlePath: string): void {
     description: 'Quack companion: runs AI agents against PR worktrees',
     path: launcher,
     type: 'stdio',
-    allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
+    allowed_origins: ALLOWED_EXTENSION_IDS.map((id) => `chrome-extension://${id}/`),
   };
   for (const dir of manifestDirs()) {
     fs.mkdirSync(dir, { recursive: true });
@@ -53,7 +53,7 @@ export function install(bundlePath: string): void {
   }
   console.log(`\nCompanion installed at ${launcher}`);
   console.log(`Node: ${process.execPath} (${process.version})`);
-  console.log(`Extension ID allowed: ${EXTENSION_ID}`);
+  console.log(`Extension IDs allowed: ${ALLOWED_EXTENSION_IDS.join(', ')}`);
   console.log('\nRestart the browser if the panel still says the companion is not connected.');
 }
 

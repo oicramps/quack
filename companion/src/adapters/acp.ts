@@ -7,10 +7,10 @@ import type { AdapterEvent, AskOpts } from './types.ts';
 
 type Json = Record<string, unknown>;
 
-/** A session's process is stopped after this long without a question. */
+/** Idle timeout before a cached ACP session process is terminated. */
 export const ACP_IDLE_MS = 15 * 60_000;
 
-/** A JSON-RPC connection to an agent running as an Agent Client Protocol server (`<agent> acp`). */
+/** JSON-RPC 2.0 client over stdio for an Agent Client Protocol (`<agent> acp`) subprocess. */
 export class AcpClient {
   alive = true;
   onUpdate: ((sessionId: string, update: Json) => void) | null = null;
@@ -75,8 +75,7 @@ export class AcpClient {
       if (msg.method === 'session/update') {
         this.onUpdate?.(String(params.sessionId), (params.update ?? {}) as Json);
       } else if (msg.id !== undefined) {
-        // Quack only reads: refuse anything that needs permission, and the
-        // client-side file and terminal methods it doesn't offer.
+        // Enforce read-only mode: cancel permission requests and reject client-side FS/terminal RPCs.
         if (msg.method === 'session/request_permission') {
           this.write({ jsonrpc: '2.0', id: msg.id, result: { outcome: { outcome: 'cancelled' } } });
         } else {
@@ -147,7 +146,7 @@ function summarizeTool(t: ToolCall, cwd: string): string {
   }
 }
 
-/** Tool calls arrive as a `tool_call` plus updates; each is summarized once, as soon as its input is known. */
+/** Maps `session/update` notifications into normalized text and deduplicated tool events. */
 export function createUpdateMapper(cwd: string): (update: Json) => AdapterEvent[] {
   const tools = new Map<string, ToolCall>();
   let wroteText = false;
@@ -157,7 +156,7 @@ export function createUpdateMapper(cwd: string): (update: Json) => AdapterEvent[
       case 'agent_message_chunk': {
         const c = u.content as { type?: string; text?: string } | undefined;
         if (c?.type !== 'text' || !c.text) return [];
-        // Each message between tool calls is its own paragraph; the chunks don't say so.
+        // Insert a paragraph break when text resumes after a tool call.
         const delta = toolSinceText && wroteText ? `\n\n${c.text.replace(/^\n+/, '')}` : c.text;
         wroteText = true;
         toolSinceText = false;
@@ -247,9 +246,8 @@ async function openSession(bin: string, opts: AskOpts): Promise<LiveSession> {
 }
 
 /**
- * Asks through a session whose agent process stays open between questions, so
- * a follow-up skips starting the CLI and reloading the conversation. The
- * process stops after ACP_IDLE_MS idle, when the thread is closed, or with the host.
+ * Sends a prompt over a persistent ACP session. Reuses the live process across
+ * follow-ups and terminates it after `ACP_IDLE_MS` idle, on `close_session`, or on host exit.
  */
 export async function* askAcp(bin: string, opts: AskOpts, onModels?: (models: AcpModel[]) => void): AsyncGenerator<AdapterEvent> {
   let s = opts.sessionId ? sessions.get(opts.sessionId) : undefined;

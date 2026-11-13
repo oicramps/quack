@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  push:
+    branches: ['main']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Check version and determine if release is needed
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -e "const fs=require('fs'); const m=fs.readFileSync('shared/src/constants.ts','utf8').match(/QUACK_VERSION\s*=\s*'([^']+)'/); if(!m) process.exit(1); console.log(m[1]);")
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          # Sync package.json versions if someone bumped QUACK_VERSION alone
+          node -e '
+            const fs = require("fs");
+            const v = process.argv[1];
+            for (const p of ["package.json", "shared/package.json", "companion/package.json", "extension/package.json"]) {
+              const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+              pkg.version = v;
+              fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+            }
+          ' "$VERSION"
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]] || [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # On push/merge to main: release only if GitHub Release for this version does not exist yet
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; skipping release steps."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version ${TAG} detected on main; running release."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.check.outputs.should_release == 'true'
+        run: yarn install --frozen-lockfile
+
+      - if: steps.check.outputs.should_release == 'true'
+        run: yarn test
+
+      - if: steps.check.outputs.should_release == 'true'
+        run: yarn typecheck
+
+      - name: Build companion and installer assets
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          yarn workspace quack-companion build
+          mkdir -p release
+          cp companion/dist/quack-companion.cjs release/quack-companion.cjs
+          sed "s|__COMPANION_REPO__|${GITHUB_REPOSITORY}|g" companion/scripts/install.sh > release/install.sh
+          chmod +x release/install.sh
+          (cd release && sha256sum quack-companion.cjs > quack-companion.cjs.sha256)
+          yarn --cwd companion pack --filename ../release/quack-companion.tgz
+
+      - name: Build extension zips
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          yarn workspace @quack/extension zip
+          yarn workspace @quack/extension zip -b edge
+          cp extension/.output/store/quackextension-*-chrome.zip release/
+          cp extension/.output/store/quackextension-*-edge.zip release/
+
+      - name: Tag and publish GitHub Release
+        if: steps.check.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.check.outputs.tag }}"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* --generate-notes --title "$TAG"
+          fi
+
+      - name: Publish quack-companion to registry (Trusted Publishing)
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          VERSION="${{ steps.check.outputs.version }}"
+          PUBLISHED=$(yarn info "quack-companion@${VERSION}" version --silent 2>/dev/null || true)
+          if [ "$PUBLISHED" = "$VERSION" ]; then
+            echo "quack-companion@${VERSION} is already published; skipping."
+            exit 0
+          fi
+          # Publishes the tarball built by `yarn --cwd companion pack` using GitHub OIDC Trusted Publishing (no NPM_TOKEN needed).
+          npm publish ./release/quack-companion.tgz --access public --provenance
+
+      - name: Submit to Chrome Web Store
+        if: steps.check.outputs.should_release == 'true'
+        working-directory: extension
+        env:
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+        run: |
+          if [ -z "$CHROME_EXTENSION_ID" ] || [ -z "$CHROME_CLIENT_ID" ]; then
+            echo "Chrome Web Store secrets not configured; skipping store submission."
+            exit 0
+          fi
+          yarn wxt submit --chrome-zip .output/store/quackextension-*-chrome.zip
+
+      - name: Submit to Edge Add-ons
+        if: steps.check.outputs.should_release == 'true'
+        working-directory: extension
+        env:
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+        run: |
+          if [ -z "$EDGE_PRODUCT_ID" ] || [ -z "$EDGE_CLIENT_ID" ]; then
+            echo "Edge Add-ons secrets not configured; skipping store submission."
+            exit 0
+          fi
+          yarn wxt submit --edge-zip .output/store/quackextension-*-edge.zip
