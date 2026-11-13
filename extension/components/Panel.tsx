@@ -11,7 +11,7 @@ import type {
   HistoryTurn,
   ProgressStep,
 } from '@quack/shared';
-import { INSTALL_COMMAND, PROTOCOL_VERSION, ciCommentText, parseCiReport } from '@quack/shared';
+import { INSTALL_COMMAND, PROTOCOL_VERSION, QUACK_VERSION, ciCommentText, isOlderVersion, parseCiReport } from '@quack/shared';
 import { type CompanionClient, newRequestId } from '../lib/client';
 import { prKey, selectionChip, selectionLabel } from '../lib/github';
 import type { PanelPage } from '../lib/page';
@@ -184,6 +184,7 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
   const [question, setQuestion] = useState('');
   const [running, setRunning] = useState<{ requestId: string; turnId: string } | null>(null);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
   /** The comment just copied for GitHub, offered again from the toast. */
   const [toast, setToast] = useState<{ selection: CodeSelection | null; seq: number } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -559,6 +560,8 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
             : { tone: 'ok', text: 'Ready' };
 
   const incompatible = connection.state === 'connected' && connection.protocol !== PROTOCOL_VERSION;
+  const outdated =
+    connection.state === 'connected' && !incompatible && !updateDismissed && isOlderVersion(connection.version, QUACK_VERSION);
   const canAttach = page.lastSelection && !chips.some((c) => sameSelection(c, page.lastSelection!));
   const canAsk = !!question.trim() && (loading || agentStatus?.state === 'ready') && !running;
   const empty = !thread?.turns.length;
@@ -587,6 +590,9 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
           {connection.protocol ? `protocol ${connection.protocol}` : 'an older protocol'}. Reinstall it:
           <CommandBlock command={INSTALL_COMMAND} />
         </Banner>
+      )}
+      {outdated && connection.state === 'connected' && (
+        <UpdateBanner from={connection.version} to={QUACK_VERSION} onDismiss={() => setUpdateDismissed(true)} />
       )}
       {staleFrom && !offline && (
         <StaleBanner
@@ -770,6 +776,21 @@ function Banner({ children }: { children: ReactNode }) {
     <div className="banner" role="status">
       <Warning size={16} />
       <div>{children}</div>
+    </div>
+  );
+}
+
+function UpdateBanner({ from, to, onDismiss }: { from: string; to: string; onDismiss: () => void }) {
+  return (
+    <div className="banner update" role="status">
+      <Warning size={16} />
+      <div>
+        Companion update available: v{from} → v{to}. Run this, then reopen the panel:
+        <CommandBlock command={INSTALL_COMMAND} />
+      </div>
+      <button type="button" className="ghost icon-only" aria-label="Dismiss until the panel reopens" onClick={onDismiss}>
+        <Close size={12} />
+      </button>
     </div>
   );
 }

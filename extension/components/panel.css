@@ -477,6 +477,9 @@ button.collapse {
 .banner .command {
   margin-top: 6px;
 }
+.banner.update > button {
+  flex: none;
+}
 .banner.stale {
   align-items: center;
   justify-content: space-between;
