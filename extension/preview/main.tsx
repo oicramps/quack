@@ -148,7 +148,14 @@ class FakeClient {
     }
     if (message.type === 'status') {
       const reply = (list: AgentStatus[], pending: AgentStatus['id'][]) =>
-        listener?.({ type: 'status', requestId: message.requestId, version: QUACK_VERSION, protocol: PROTOCOL_VERSION, agents: list, pending });
+        listener?.({
+          type: 'status',
+          requestId: message.requestId,
+          version: scenario === 'outdated' ? '0.1.0' : QUACK_VERSION,
+          protocol: PROTOCOL_VERSION,
+          agents: list,
+          pending,
+        });
       setTimeout(() => reply([], ['cursor', 'claude-code']), 10);
       // "loading" stays on the companion's first, partial answer.
       if (scenario !== 'loading') setTimeout(() => reply(agents, []), 20);
