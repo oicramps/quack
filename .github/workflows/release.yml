@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  packages: write
 
 jobs:
   release:
@@ -118,6 +119,39 @@ jobs:
           fi
           # Publishes the tarball built by `yarn --cwd companion pack` using GitHub OIDC Trusted Publishing (no NPM_TOKEN needed).
           npm publish ./release/quack-companion.tgz --access public --provenance
+
+      # GitHub's Packages tab only lists GitHub Packages, not npmjs.
+      # The npm registry requires a scope that matches the repository owner.
+      - name: Publish quack-companion to GitHub Packages
+        if: steps.check.outputs.should_release == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.check.outputs.version }}"
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          SCOPE="@${OWNER}/quack-companion"
+          echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$NPM_CONFIG_USERCONFIG"
+          PUBLISHED=$(npm view "${SCOPE}@${VERSION}" version --registry https://npm.pkg.github.com 2>/dev/null || true)
+          if [ "$PUBLISHED" = "$VERSION" ]; then
+            echo "${SCOPE}@${VERSION} is already on GitHub Packages; skipping."
+            exit 0
+          fi
+          STAGE=$(mktemp -d)
+          tar -xzf release/quack-companion.tgz -C "$STAGE"
+          node -e '
+            const fs = require("fs");
+            const pkgPath = process.argv[1];
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            pkg.name = process.argv[2];
+            pkg.repository = {
+              type: "git",
+              url: "https://github.com/" + process.env.GITHUB_REPOSITORY + ".git",
+              directory: "companion",
+            };
+            pkg.publishConfig = { registry: "https://npm.pkg.github.com", access: "public" };
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+          ' "$STAGE/package/package.json" "$SCOPE"
+          npm publish "$STAGE/package" --registry https://npm.pkg.github.com --access public
 
       - name: Submit to Chrome Web Store
         if: steps.check.outputs.should_release == 'true'

@@ -3,7 +3,7 @@
 Quack ships two artifacts synchronized to a single `QUACK_VERSION` in `shared/src/constants.ts`:
 
 - **Browser extension (`@quack/extension`)**: Chrome Web Store (`hkdgklakkcffcmegdagdoigpaefhlipj`) and Edge Add-ons.
-- **Local companion (`quack-companion`)**: npm registry (`npx quack-companion@latest install`) and GitHub Releases (`install.sh`, `quack-companion.cjs`, `.sha256`, `.tgz`).
+- **Local companion (`quack-companion`)**: npm registry (`npx quack-companion@latest install`), the repository's GitHub Packages page (`@oicramps/quack-companion`), and GitHub Releases (`install.sh`, `quack-companion.cjs`, `.sha256`, `.tgz`).
 
 > **Note on `PROTOCOL_VERSION`**: Bump `QUACK_VERSION` on every release. Bump `PROTOCOL_VERSION` **only** when a wire-protocol change breaks compatibility between the extension and an already-installed companion.
 
@@ -20,6 +20,7 @@ flowchart LR
   CHECK -->|"No (version bumped)"| REL["Build & Tag vX.Y.Z"]
   REL --> GHR["GitHub Release<br/>(install.sh + bundle + zips)"]
   REL --> NPM["npm Registry<br/>(OIDC Trusted Publishing)"]
+  REL --> GHPKG["GitHub Packages<br/>(@owner/quack-companion)"]
   REL --> CWS["Chrome Web Store<br/>(wxt submit)"]
 ```
 
@@ -27,7 +28,7 @@ flowchart LR
 
 1. On a branch, bump `QUACK_VERSION` in `shared/src/constants.ts` (e.g. `'0.2.1'`). *(Workspace `package.json` versions are synced automatically during the release workflow.)*
 2. Open a PR into `main` and wait for `CI` (`ci.yml`) to pass.
-3. **Merge the PR**. `release.yml` automatically tags `v0.2.1`, creates the GitHub Release, publishes `quack-companion@0.2.1` to npm, and submits the new extension `.zip` to the Chrome Web Store for review.
+3. **Merge the PR**. `release.yml` automatically tags `v0.2.1`, creates the GitHub Release, publishes `quack-companion@0.2.1` to npm, publishes `@oicramps/quack-companion@0.2.1` to GitHub Packages (so it shows on the repository Packages tab), and submits the new extension `.zip` to the Chrome Web Store for review.
 
 *(Avoid merging a second `QUACK_VERSION` bump while an earlier Chrome Web Store submission is still `Pending Review`, as the Web Store API blocks new uploads until the pending review finishes or is cancelled.)*
 
