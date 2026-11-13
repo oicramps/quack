@@ -109,7 +109,9 @@ jobs:
         if: steps.check.outputs.should_release == 'true'
         run: |
           VERSION="${{ steps.check.outputs.version }}"
-          PUBLISHED=$(yarn info "quack-companion@${VERSION}" version --silent 2>/dev/null || true)
+          # npm view talks to the registry. yarn info would answer with the
+          # local workspace version after the version-sync step above.
+          PUBLISHED=$(npm view "quack-companion@${VERSION}" version 2>/dev/null || true)
           if [ "$PUBLISHED" = "$VERSION" ]; then
             echo "quack-companion@${VERSION} is already published; skipping."
             exit 0
@@ -137,7 +139,7 @@ jobs:
           status=$?
           set -e
           printf '%s\n' "$output"
-          if [ "$status" -ne 0 ] && printf '%s\n' "$output" | grep -Eq 'ITEM_PENDING_REVIEW|PKG_INVALID_VERSION_NUMBER'; then
+          if [ "$status" -ne 0 ] && printf '%s\n' "$output" | grep -Eq 'ITEM_PENDING_REVIEW|ITEM_NOT_UPDATABLE|PKG_INVALID_VERSION_NUMBER'; then
             echo "Chrome Web Store already has this version, or a review is still pending; skipping."
             exit 0
           fi
