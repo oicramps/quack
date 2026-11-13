@@ -1,105 +1,109 @@
 # Quack
 
-Ask Claude Code or Cursor about a GitHub pull request directly from the PR page, without stashing local work or switching branches.
+Ask your local **Claude Code** or **Cursor** about any GitHub pull request with full repository context—without stashing local work or switching branches.
 
-A Manifest V3 browser extension renders a side panel next to the PR. A local native messaging host (`quack-companion`), spawned on demand by the browser, fetches the PR head into an isolated git worktree and runs the selected AI CLI in read-only mode. The working tree and branches of your local clone are never modified.
+Quack pairs a Chrome/Edge side-panel extension with a lightweight local companion ([`quack-companion`](https://www.npmjs.com/package/quack-companion)). When you ask a question on a PR, the companion fetches the PR commit into a separate, detached git worktree and runs your local AI CLI there in read-only mode.
 
-## Workspace Layout
+```mermaid
+flowchart LR
+  GH["GitHub PR Tab<br/>(diff & line selection)"] --> EXT["Quack Side Panel<br/>(Chrome / Edge)"]
+  EXT <-->|"Native Messaging<br/>(stdio)"| COMP["quack-companion<br/>(spawned on demand)"]
+  COMP -->|"git fetch pull/N/head"| CLONE["Your Local Clone<br/>(branches untouched)"]
+  CLONE --> WT["Detached Worktree<br/>(~/.quack/worktrees)"]
+  COMP -->|"read-only mode"| AI["Cursor / Claude Code"]
+  AI -->|"reads callers, types & tests"| WT
+  COMP -.->|"optional: failed logs"| GHCLI["gh CLI"]
+```
 
-- `extension/`: WXT + React + TypeScript browser extension (Chrome and Edge Manifest V3)
-- `companion/`: Node.js native messaging host, bundled into a single CJS executable with esbuild
-- `shared/`: Protocol types, CI report parser, and constants shared by `extension` and `companion`
-- `docs/architecture.md`: Technical architecture, protocol flow, worktree isolation, and security model
-- `docs/release.md`: Release pipeline for GitHub Releases, Chrome Web Store, and Edge Add-ons
+---
 
-## Setup
+## Quick Install
 
-Requirements: macOS or Linux, Node.js 20+, Yarn 1.22+, git 2.30+, Chrome or Edge, and Cursor CLI (`cursor-agent`) and/or Claude Code (`claude`). GitHub CLI (`gh`) is optional and used for PR metadata and failing CI logs.
+### Prerequisites
+- **macOS or Linux** with `Node.js >= 20`, `git >= 2.30`, and a **local clone** of the repo you're reviewing
+- **Cursor CLI** (`agent` / `cursor-agent`) and/or **Claude Code** (`claude`), signed in locally
+- *(Optional)* **GitHub CLI** (`gh`), signed in, to enable **Check CI** failure triage
 
-1. Install dependencies and build both packages:
+### 1. Install the Extension
+Install **[Quack from the Chrome Web Store](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)**.
 
-   ```sh
-   yarn install
-   yarn build
-   ```
+### 2. Register the Local Companion
+Run once in your terminal (registers Chrome, Edge, and Chromium):
 
-2. Register the native messaging host for Chrome, Edge, and Chromium:
+```sh
+npx quack-companion@latest install
+```
 
-   ```sh
-   yarn install-host
-   ```
+*(No npm? Run `curl -fsSL https://github.com/oicramps/quack/releases/latest/download/install.sh | sh` instead.)*
 
-   End users installing from the Chrome Web Store can register the prebuilt companion without cloning the repository:
+Restart your browser once, open any PR on `github.com`, and click the **Quack** toolbar icon.
 
-   ```sh
-   npx quack-companion@latest install
-   ```
+---
 
-   *(Or without npm: `curl -fsSL https://github.com/oicramps/quack/releases/latest/download/install.sh | sh`, which downloads `quack-companion.cjs` from the latest GitHub Release, verifies its SHA-256 checksum, installs it to `~/.quack/bin`, and writes the native messaging host manifests.)*
+## Features
 
-3. Load the unpacked extension: open `chrome://extensions` (or `edge://extensions`), enable **Developer mode**, click **Load unpacked**, and select `extension/.output/chrome-mv3`. Development builds include `EXTENSION_PUBLIC_KEY` so the unpacked extension ID is fixed to `ikkjkdmcnmifldjmajjjgabanjomhikf`.
+| Feature | How to Use It |
+| --- | --- |
+| **Ask with full repo context** | Open the side panel on any PR and ask a question—your agent can inspect callers, configs, and tests outside the diff. |
+| **Attach exact diff lines** | Click a line number in a GitHub diff (Shift-click for a range), then press **`Cmd/Ctrl+Shift+K`** or click **Ask Quack**. |
+| **Triage failing CI (`Check CI`)** | When checks fail and `gh` is logged in, click **Check CI** to separate real PR regressions (with copyable patches) from flaky jobs. |
+| **Switch agents mid-thread** | Ask follow-ups in the same session, or switch between **Cursor** and **Claude Code** without losing earlier turns. |
+| **Draft review comments** | Turn any answer into an editable Markdown review comment and jump straight to the GitHub diff line. |
+| **Commit sync detection** | Quack tracks the exact commit SHA behind each answer and offers **Re-ask on latest** when new commits land. |
 
-4. Open any pull request on `github.com`. Click the Quack toolbar icon to open the side panel.
+---
 
-For active development, run `yarn dev` to watch and rebuild the extension.
+## Configuration & Cleanup
 
-## Usage
-
-- **Whole-PR questions**: Open the side panel and type a question.
-- **Line selections**: Select code in the PR diff or click line numbers (Shift-click for a range), then press **Cmd/Ctrl+Shift+K** or click the floating **Ask Quack** button.
-- **Failing CI analysis**: When checks fail on the PR and `gh` is authenticated, click **Check CI** in the empty state to inspect failed job logs and compare against recent base-branch runs.
-- **Keyboard shortcuts**: **Enter** sends, **Shift+Enter** inserts a newline, **Esc** cancels an in-flight request.
-- **Multi-turn & agent switching**: Follow-up questions reuse the active agent session. Switching agents mid-thread passes prior turns as conversation context to the new agent.
-
-## Configuration
-
-`~/.quack/config.json` is created on first run:
+On first run, Quack creates `~/.quack/config.json` and scans common project folders (`~/Documents/Dev/Projects`, `~/Projects`, `~/Developer`, `~/repos`, `~/src`, `~/code`) up to 2 levels deep to match your local clone's `origin` remote. Add custom clone locations under `"repoPaths"`:
 
 ```json
 {
   "scanRoots": ["~/Documents/Dev/Projects", "~/Projects", "~/Developer", "~/repos", "~/src", "~/code"],
-  "repoPaths": { "owner/repo": "/path/to/clone" },
+  "repoPaths": { "owner/repo": "/custom/path/to/clone" },
   "worktreeRoot": "~/.quack/worktrees",
   "retentionDays": 7,
   "maxWorktrees": 20
 }
 ```
 
-The companion locates local clones by matching each repository's `origin` remote URL against the PR's `owner/repo`, scanning `scanRoots` up to two directory levels deep. Explicit paths in `repoPaths` take precedence.
-
-## Repository Isolation
-
-The companion only writes to two locations outside your working tree and branches:
-
-- `refs/pr-review/<number>` in the local clone's git object store
-- Detached worktrees under `~/.quack/worktrees/<owner>/<repo>/pr-<number>`
-
-Remove all Quack worktrees and `refs/pr-review/*` refs at any time:
+Your working tree and local branches are **never modified**. To remove cached worktrees or uninstall the host at any time:
 
 ```sh
-yarn workspace quack-companion prune
+npx quack-companion doctor      # Check config and local AI agent status
+npx quack-companion prune       # Remove all ~/.quack/worktrees and refs/pr-review/* refs
+npx quack-companion uninstall   # Unregister browser manifests and remove ~/.quack/bin
 ```
 
-## Companion CLI & Debugging
+---
+
+## Local Development
+
+Requires Node.js 22+ (the extension toolchain depends on it). The published companion still runs on Node.js 20+.
+
+### Workspace Map
+
+| Workspace | Path | Purpose |
+| --- | --- | --- |
+| `@quack/extension` | `extension/` | WXT + React 19 + TypeScript Manifest V3 extension |
+| `quack-companion` | `companion/` | Node.js native messaging host, bundled with esbuild |
+| `@quack/shared` | `shared/` | Wire protocol types, constants, and `quack-ci` parser |
+
+### Commands (Yarn `1.22+`)
 
 ```sh
-node companion/dist/quack-companion.cjs doctor     # Print config and agent availability
-node companion/dist/quack-companion.cjs prune      # Remove all Quack worktrees and refs/pr-review/* refs
-node companion/dist/quack-companion.cjs uninstall  # Remove native messaging manifests and ~/.quack/bin
-
-# Exercise the native messaging host directly over stdio without a browser:
-node companion/scripts/harness.mjs status
-node companion/scripts/harness.mjs ask --pr owner/repo#14 --agent cursor --question "..."
-
-# Record raw agent stream output to ~/.quack/recordings/ for parser test fixtures:
-QUACK_RECORD=1 node companion/scripts/harness.mjs ask --pr owner/repo#14 --agent claude-code --question "..."
+yarn install                                # Install workspace dependencies
+yarn build                                  # Build companion + unpacked extension
+yarn install-host                           # Register local companion from source
+yarn dev                                    # Watch and rebuild extension on change
+yarn workspace @quack/extension preview     # Open standalone UI preview server
+yarn test                                   # Run companion unit tests
+yarn typecheck                              # Type-check all workspaces
 ```
 
-Diagnostic logs (containing timing and errors, never code or prompts) are written to `~/.quack/logs/companion.log`.
+To load your local build in Chrome: open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `extension/.output/chrome-mv3` (uses `DEV_EXTENSION_ID`).
 
-## Testing & Verification
+## Further Reading
 
-```sh
-yarn test       # Run companion unit tests (framing, validation, parsers, stream lifecycle, CI checks)
-yarn typecheck  # Type-check companion and extension workspaces
-```
+- **[Architecture](docs/architecture.md)** — Message protocol, worktree locking, agent adapters, and security boundaries.
+- **[Release Guide & Privacy Policy](docs/release.md)** — CI/CD workflows, Trusted Publishing, Chrome Web Store reference, and privacy policy.

@@ -77,7 +77,7 @@ jobs:
           sed "s|__COMPANION_REPO__|${GITHUB_REPOSITORY}|g" companion/scripts/install.sh > release/install.sh
           chmod +x release/install.sh
           (cd release && sha256sum quack-companion.cjs > quack-companion.cjs.sha256)
-          yarn --cwd companion pack --filename ../release/quack-companion.tgz
+          yarn --cwd companion pack --filename "$PWD/release/quack-companion.tgz"
 
       - name: Build extension zips
         if: steps.check.outputs.should_release == 'true'
@@ -128,7 +128,18 @@ jobs:
             echo "Chrome Web Store secrets not configured; skipping store submission."
             exit 0
           fi
-          yarn wxt submit --chrome-zip .output/store/quackextension-*-chrome.zip
+          # `wxt submit` is the Chrome Web Store client. It has no "already uploaded"
+          # flag, so a repeat of the same version (or a review still pending) is a skip.
+          set +e
+          output=$(yarn wxt submit --chrome-zip .output/store/quackextension-*-chrome.zip 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ] && printf '%s\n' "$output" | grep -Eq 'ITEM_PENDING_REVIEW|PKG_INVALID_VERSION_NUMBER'; then
+            echo "Chrome Web Store already has this version, or a review is still pending; skipping."
+            exit 0
+          fi
+          exit "$status"
 
       - name: Submit to Edge Add-ons
         if: steps.check.outputs.should_release == 'true'

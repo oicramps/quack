@@ -1,65 +1,69 @@
-# Releasing Quack
+# Releasing Quack & Privacy Policy
 
-Quack ships two artifacts that release together from `QUACK_VERSION` (`shared/src/constants.ts`):
+Quack ships two artifacts synchronized to a single `QUACK_VERSION` in `shared/src/constants.ts`:
 
-- **Browser extension (`@quack/extension`)**: Published to the Chrome Web Store (`hkdgklakkcffcmegdagdoigpaefhlipj`) and optionally Edge Add-ons.
-- **Local companion (`quack-companion`)**: Packaged with `yarn pack` and published to the npm registry via GitHub OIDC Trusted Publishing (`npx quack-companion@latest install`), plus attached to GitHub Releases (`install.sh`, `quack-companion.cjs`, `quack-companion.cjs.sha256`, `quack-companion.tgz`).
+- **Browser extension (`@quack/extension`)**: Chrome Web Store (`hkdgklakkcffcmegdagdoigpaefhlipj`) and Edge Add-ons.
+- **Local companion (`quack-companion`)**: npm registry (`npx quack-companion@latest install`) and GitHub Releases (`install.sh`, `quack-companion.cjs`, `.sha256`, `.tgz`).
 
-`PROTOCOL_VERSION` is incremented only on breaking wire-protocol changes; the side panel prompts the user to reinstall the companion only when `PROTOCOL_VERSION` differs.
+> **Note on `PROTOCOL_VERSION`**: Bump `QUACK_VERSION` on every release. Bump `PROTOCOL_VERSION` **only** when a wire-protocol change breaks compatibility between the extension and an already-installed companion.
 
-## Automated CI & Release Workflows
+---
 
-- **`.github/workflows/ci.yml`**: Runs on every pull request and push to `main` (`yarn install --frozen-lockfile`, `yarn test`, `yarn typecheck`, companion build, and store zip build).
-- **`.github/workflows/release.yml`**: Runs on pushes/merges to `main`, `v*` tags, and manual `workflow_dispatch`.
-  - Reads `QUACK_VERSION` from `shared/src/constants.ts`.
-  - If GitHub Release `v<QUACK_VERSION>` already exists, exits cleanly.
-  - Otherwise syncs workspace `package.json` versions, runs tests and typecheck, creates and pushes tag `v<QUACK_VERSION>`, publishes the GitHub Release, publishes `quack-companion` via OIDC Trusted Publishing (zero npm secrets stored on GitHub), and submits the Chrome/Edge `.zip` archives via `yarn wxt submit`.
+## Automated Release Pipeline
 
-### Trusted Publishing Setup (`quack-companion`)
+```mermaid
+flowchart LR
+  PR["Pull Request"] --> CI["ci.yml<br/>Test, Typecheck & Build"]
+  CI --> MERGE["Merge to main"]
+  MERGE --> CHECK{"GitHub Release<br/>v(QUACK_VERSION)<br/>already exists?"}
+  CHECK -->|"Yes"| SKIP["Exit cleanly<br/>(no-op)"]
+  CHECK -->|"No (version bumped)"| REL["Build & Tag vX.Y.Z"]
+  REL --> GHR["GitHub Release<br/>(install.sh + bundle + zips)"]
+  REL --> NPM["npm Registry<br/>(OIDC Trusted Publishing)"]
+  REL --> CWS["Chrome Web Store<br/>(wxt submit)"]
+```
 
-1. Publish the initial version once locally so the package page exists on `npmjs.com`:
-   ```sh
-   yarn workspace quack-companion build
-   yarn --cwd companion publish --access public --new-version 0.2.0 --no-git-tag-version
-   ```
-2. On `https://www.npmjs.com/package/quack-companion/access`, under **Trusted Publisher**, select **GitHub Actions**:
-   - **Organization or user**: `oicramps`
-   - **Repository**: `quack`
-   - **Workflow filename**: `release.yml`
-   - **Environment name**: *(leave blank)*
+### Shipping a New Version (Day-to-Day)
 
-### Required GitHub Actions Secrets
+1. On a branch, bump `QUACK_VERSION` in `shared/src/constants.ts` (e.g. `'0.2.1'`). *(Workspace `package.json` versions are synced automatically during the release workflow.)*
+2. Open a PR into `main` and wait for `CI` (`ci.yml`) to pass.
+3. **Merge the PR**. `release.yml` automatically tags `v0.2.1`, creates the GitHub Release, publishes `quack-companion@0.2.1` to npm, and submits the new extension `.zip` to the Chrome Web Store for review.
 
-Configure under **Settings -> Secrets and variables -> Actions** (no `NPM_TOKEN` needed):
+*(Avoid merging a second `QUACK_VERSION` bump while an earlier Chrome Web Store submission is still `Pending Review`, as the Web Store API blocks new uploads until the pending review finishes or is cancelled.)*
 
-| Secret | Source |
+---
+
+## One-Time Repository Setup
+
+### 1. npm OIDC Trusted Publishing (No `NPM_TOKEN` Secret Needed)
+Configured at `https://www.npmjs.com/package/quack-companion/access` under **Trusted Publisher (GitHub Actions)**:
+- **Owner**: `oicramps` | **Repository**: `quack` | **Workflow**: `release.yml` | **Allow `npm publish`**: enabled.
+
+### 2. GitHub Actions Secrets
+Configured at `Settings -> Secrets and variables -> Actions`:
+
+| Secret | Purpose |
 | --- | --- |
 | `CHROME_EXTENSION_ID` | Chrome Web Store item ID (`hkdgklakkcffcmegdagdoigpaefhlipj`) |
-| `CHROME_CLIENT_ID` | Google Cloud Console OAuth 2.0 Web Application Client ID |
-| `CHROME_CLIENT_SECRET` | Google Cloud Console OAuth 2.0 Client Secret |
-| `CHROME_REFRESH_TOKEN` | Refresh token generated via Google OAuth 2.0 Playground (`https://www.googleapis.com/auth/chromewebstore`) |
+| `CHROME_CLIENT_ID` | Google Cloud OAuth 2.0 Web Application Client ID |
+| `CHROME_CLIENT_SECRET` | Google Cloud OAuth 2.0 Client Secret |
+| `CHROME_REFRESH_TOKEN` | Refresh token for scope `https://www.googleapis.com/auth/chromewebstore` |
 
-Optional Edge Add-ons secrets: `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY`.
+*(Optional Edge Add-ons secrets: `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY`.)*
 
-## First Store Upload
+### 3. Building Store Assets Locally
 
-1. Build the store zip (`QUACK_STORE=1` omits the development `key` from `manifest.json` and outputs to `extension/.output/store/`):
+```sh
+yarn workspace @quack/extension zip       # Builds keyless store zip in extension/.output/store/
+yarn workspace @quack/extension preview   # Starts preview server for 1280x800 screenshots
+yarn workspace @quack/extension icons     # Regenerates extension/public/icon/*.png
+```
 
-   ```sh
-   yarn workspace @quack/extension zip
-   ```
-
-   (`yarn dev` and `yarn build` retain `key` and write to `extension/.output/`, keeping the unpacked development ID `ikkjkdmcnmifldjmajjjgabanjomhikf`.)
-2. Upload `extension/.output/store/quackextension-<version>-chrome.zip` manually once in the Chrome Web Store Developer Dashboard, complete the Store Listing, Privacy Practices, and Distribution tabs, and submit for review.
-3. Ensure `STORE_EXTENSION_ID` in `shared/src/constants.ts` matches the assigned store ID so `quack-companion` includes it in `allowed_origins`.
+---
 
 ## Store Listing Reference
 
-### Single Purpose Description
-
-> Quack lets you ask your own local AI agent about the code in a GitHub pull request you already have open, without checking that pull request out.
-
-### Permissions
+- **Single purpose**: *Quack lets you ask your own local AI agent about the code in a GitHub pull request you already have open, without checking that pull request out.*
 
 | Permission | Justification |
 | --- | --- |
@@ -68,18 +72,13 @@ Optional Edge Add-ons secrets: `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KE
 | `storage` | Stores selected agent/model preferences and recently queried pull requests locally in `chrome.storage.local`. |
 | `https://github.com/*` | Reads PR metadata and selected diff lines from the active GitHub tab and renders the in-page Ask Quack button. |
 
-### Assets
-
-- Icon: `extension/public/icon/128.png` (generated from `extension/assets/icon.svg` via `yarn workspace @quack/extension icons`).
-- Screenshots: `1280x800` PNGs in `extension/.output/store/screenshots/` (captured from `yarn workspace @quack/extension preview`).
+---
 
 ## Privacy Policy
 
-Link `https://github.com/oicramps/quack/blob/main/docs/release.md#privacy-policy` in the Chrome Web Store dashboard:
+Quack consists of a browser extension and an open-source local companion program (`quack-companion`) that run on your computer.
 
-Quack is a browser extension and an open-source local companion program (`quack-companion`) that run on your computer.
-
-- **Data read by the extension**: Activates only on `github.com` pull request pages. Reads the open pull request's repository owner/name, pull request number, title, commit SHA, and diff lines you select. Stores your chosen AI agent, model preference, and recently queried pull requests locally on your device (`chrome.storage.local`).
-- **Local processing**: The companion runs locally on your machine using your local git clone and, when inspecting failing checks, your authenticated GitHub CLI (`gh`). It invokes the local AI CLI you selected (Cursor or Claude Code) with your question and repository context. Subsequent handling of that data is governed by the AI tool and account you configured.
-- **No servers or telemetry**: Quack operates no servers, requires no Quack account, collects no telemetry or analytics, and does not sell, transmit, or share user data.
-- **Removal**: Uninstalling the extension deletes its browser storage. Running `npx quack-companion uninstall` removes the native messaging registration and `~/.quack/bin`, and `npx quack-companion prune` removes local review worktrees under `~/.quack/worktrees`.
+- **Data read by the extension**: Quack activates only on `github.com` pull request pages. It reads the open pull request's repository owner and name, pull request number, title, commit SHA, and any diff lines you select. It stores your chosen AI agent, model preference, and recently queried pull requests locally on your device (`chrome.storage.local`).
+- **Local processing**: The companion runs locally on your machine using your local git clone and, when inspecting failing checks, your authenticated GitHub CLI (`gh`). It invokes the local AI CLI you selected (Cursor or Claude Code) with your question and relevant repository context. Subsequent handling of that data is governed by the AI tool and account you configured.
+- **No servers or telemetry**: Quack operates no backend servers, requires no Quack account, collects no analytics or usage telemetry, and does not sell, transmit, or share user data.
+- **Data removal**: Uninstalling the browser extension deletes all locally stored preferences. Running `npx quack-companion uninstall` removes the native messaging registration and `~/.quack/bin`, and running `npx quack-companion prune` removes local PR review worktrees under `~/.quack/worktrees`.
