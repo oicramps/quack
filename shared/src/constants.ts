@@ -34,3 +34,14 @@ export const COMPANION_REPO = 'oicramps/quack';
 export const CHROME_STORE_URL = `https://chromewebstore.google.com/detail/quack/${STORE_EXTENSION_ID}`;
 
 export const INSTALL_COMMAND = 'npx quack-companion@latest install';
+
+/** True when dotted version `a` is lower than `b`. Unparseable parts count as 0. */
+export function isOlderVersion(a: string, b: string): boolean {
+  const parse = (v: string) => v.split('-')[0].split('.').map((n) => Number.parseInt(n, 10) || 0);
+  const [x, y] = [parse(a), parse(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d) return d < 0;
+  }
+  return false;
+}

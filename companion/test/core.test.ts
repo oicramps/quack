@@ -9,7 +9,7 @@ import { install, nativeMessagingHostDirs, selectInstallHostDirs, uninstall } fr
 import { buildCiPrompt, buildFollowUp, buildPrompt } from '../src/prompt.ts';
 import { parseGitHubRemote } from '../src/repo.ts';
 import { fileAnchor } from '../src/selection.ts';
-import { ciCommentText, parseCiReport } from '@quack/shared';
+import { ciCommentText, isOlderVersion, parseCiReport } from '@quack/shared';
 import { claudeGuardArgs } from '../src/adapters/claude.ts';
 import { cursorAcpArgs } from '../src/adapters/cursor.ts';
 import { prDiff } from '../src/pr.ts';
@@ -331,4 +331,13 @@ test('close_session messages are validated', () => {
     sessionId: 'abc-1',
   });
   assert.throws(() => validateMessage({ type: 'close_session', requestId: 'r1', agent: 'cursor', sessionId: '--rm' }), ValidationError);
+});
+
+test('an older companion version is detected numerically, not as text', () => {
+  assert.ok(isOlderVersion('0.2.1', '0.2.2'));
+  assert.ok(isOlderVersion('0.9.0', '0.10.0'));
+  assert.ok(isOlderVersion('0.2', '0.2.1'));
+  assert.ok(!isOlderVersion('0.2.1', '0.2.1'));
+  assert.ok(!isOlderVersion('0.3.0', '0.2.9'));
+  assert.ok(!isOlderVersion('0.2.1-beta', '0.2.1'));
 });
