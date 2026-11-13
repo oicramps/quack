@@ -79,6 +79,8 @@ npx quack-companion uninstall   # Unregister browser manifests and remove ~/.qua
 
 ## Local Development
 
+Requires Node.js 22+ (the extension toolchain depends on it). The published companion still runs on Node.js 20+.
+
 ### Workspace Map
 
 | Workspace | Path | Purpose |
