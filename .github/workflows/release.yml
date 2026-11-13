@@ -77,7 +77,7 @@ jobs:
           sed "s|__COMPANION_REPO__|${GITHUB_REPOSITORY}|g" companion/scripts/install.sh > release/install.sh
           chmod +x release/install.sh
           (cd release && sha256sum quack-companion.cjs > quack-companion.cjs.sha256)
-          yarn --cwd companion pack --filename ../release/quack-companion.tgz
+          yarn --cwd companion pack --filename "$PWD/release/quack-companion.tgz"
 
       - name: Build extension zips
         if: steps.check.outputs.should_release == 'true'
@@ -126,6 +126,30 @@ jobs:
         run: |
           if [ -z "$CHROME_EXTENSION_ID" ] || [ -z "$CHROME_CLIENT_ID" ]; then
             echo "Chrome Web Store secrets not configured; skipping store submission."
+            exit 0
+          fi
+          CWS_VERSION=$(node -e '
+            (async () => {
+              const t = await fetch("https://oauth2.googleapis.com/token", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  client_id: process.env.CHROME_CLIENT_ID,
+                  client_secret: process.env.CHROME_CLIENT_SECRET,
+                  refresh_token: process.env.CHROME_REFRESH_TOKEN,
+                  grant_type: "refresh_token",
+                }),
+              }).then((r) => r.json());
+              if (!t.access_token) return;
+              const item = await fetch(
+                `https://www.googleapis.com/chromewebstore/v1.1/items/${process.env.CHROME_EXTENSION_ID}?projection=DRAFT`,
+                { headers: { Authorization: `Bearer ${t.access_token}`, "x-goog-api-version": "2" } }
+              ).then((r) => r.json());
+              if (item && item.crxVersion) console.log(item.crxVersion);
+            })().catch(() => {});
+          ')
+          if [ "$CWS_VERSION" = "${{ steps.check.outputs.version }}" ]; then
+            echo "Chrome Web Store already has v${CWS_VERSION}; skipping store submission."
             exit 0
           fi
           yarn wxt submit --chrome-zip .output/store/quackextension-*-chrome.zip

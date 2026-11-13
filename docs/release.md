@@ -75,7 +75,7 @@ Optional Edge Add-ons secrets: `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KE
 
 ## Privacy Policy
 
-Link `https://github.com/oicramps/quack/blob/main/docs/release.md#privacy-policy` in the Chrome Web Store dashboard:
+Link `https://github.com/oicramps/quack/blob/main/docs/release.md` in the Chrome Web Store dashboard:
 
 Quack is a browser extension and an open-source local companion program (`quack-companion`) that run on your computer.
 
