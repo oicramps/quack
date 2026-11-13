@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { failingFromPayload, failureRate, isSafeWorkflow, parseRunLink, tailLog } from '../src/checks.ts';
+import { failingFromPayload, failureRate, isSafeWorkflow, parseRunLink, redactSecrets, tailLog } from '../src/checks.ts';
 
 test('only failing checks are kept, with the run and job taken from the link', () => {
   const checks = failingFromPayload([
@@ -16,6 +16,18 @@ test('only failing checks are kept, with the run and job taken from the link', (
   );
   assert.deepEqual(parseRunLink(checks[0].link), { runId: '10', jobId: '20' });
   assert.deepEqual(parseRunLink(checks[1].link), { jobId: '30' });
+});
+
+test('secrets in CI logs are masked, including on a second pass', () => {
+  const token = `ghp_${'a'.repeat(36)}`;
+  const log = `password: supersecret\nexpected 204, got 403\nAuthorization: Bearer ${token}`;
+  const once = redactSecrets(log);
+  const twice = redactSecrets(once);
+  assert.equal(once.includes(token), false);
+  assert.equal(once.includes('supersecret'), false);
+  assert.ok(once.includes('expected 204, got 403'));
+  assert.equal(twice, once);
+  assert.equal(tailLog(`keep me\n${log}`, 10, 10_000).includes(token), false);
 });
 
 test('log tails keep the end, and recent failures ignore skips', () => {

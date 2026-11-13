@@ -104,6 +104,26 @@ export function createClaudeParser(cwd: string): LineParser {
   };
 }
 
+const DENIED_TOOLS = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'WebFetch', 'WebSearch', 'Task', 'mcp__*'];
+
+/**
+ * Flags that keep a PR's `.claude` settings, hooks, and MCP servers out of the
+ * session, and that take shell, write, and network tools away on older CLIs
+ * that have no `--restricted`. Only flags this binary advertises are returned.
+ */
+export function claudeGuardArgs(help: string): string[] {
+  const args: string[] = [];
+  if (help.includes('--restricted')) args.push('--restricted');
+  else if (help.includes('--setting-sources')) args.push('--setting-sources', 'user');
+  if (help.includes('--strict-mcp-config')) args.push('--strict-mcp-config');
+  if (help.includes('--permission-prompts')) args.push('--permission-prompts', 'none');
+  if (!help.includes('--restricted') && (help.includes('--disallowedTools') || help.includes('--disallowed-tools'))) {
+    const flag = help.includes('--disallowedTools') ? '--disallowedTools' : '--disallowed-tools';
+    for (const tool of DENIED_TOOLS) args.push(flag, tool);
+  }
+  return args;
+}
+
 export const claudeAdapter: Adapter = {
   id: 'claude-code',
   label: 'Claude Code',
@@ -137,8 +157,9 @@ export const claudeAdapter: Adapter = {
       return;
     }
     const help = await run(bin, ['--help'], { timeoutMs: 15_000 });
-    const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan'];
-    if ((help.stdout + help.stderr).includes('--include-partial-messages')) args.push('--include-partial-messages');
+    const helpText = help.stdout + help.stderr;
+    const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan', ...claudeGuardArgs(helpText)];
+    if (helpText.includes('--include-partial-messages')) args.push('--include-partial-messages');
     if (opts.model) args.push('--model', opts.model);
     if (opts.sessionId) args.push('--resume', opts.sessionId);
     args.push(opts.prompt);

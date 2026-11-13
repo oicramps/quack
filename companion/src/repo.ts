@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Config } from './config.ts';
-import { run } from './exec.ts';
+import { runGit } from './exec.ts';
 import { log } from './log.ts';
 
 /** Turns any GitHub remote URL (SSH, HTTPS, ssh://) into "owner/repo", lowercased. */
@@ -13,7 +13,7 @@ export function parseGitHubRemote(url: string): string | null {
 }
 
 async function originOf(dir: string): Promise<string | null> {
-  const res = await run('git', ['-C', dir, 'remote', 'get-url', 'origin'], { timeoutMs: 5000 });
+  const res = await runGit(['-C', dir, 'remote', 'get-url', 'origin'], { timeoutMs: 5000 });
   return res.code === 0 ? parseGitHubRemote(res.stdout) : null;
 }
 

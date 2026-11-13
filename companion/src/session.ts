@@ -8,7 +8,7 @@ import { buildCiPrompt, buildFollowUp, buildPrompt } from './prompt.ts';
 import { type PrContext, prDiff, resolvePr } from './pr.ts';
 import { findClone } from './repo.ts';
 import { resolveSelections } from './selection.ts';
-import { acquireLock, changedFiles, prepareWorktree, worktreePath } from './worktree.ts';
+import { acquireLock, changedFiles, discardWorktreeChanges, prepareWorktree, worktreePath } from './worktree.ts';
 
 export type Send = (message: CompanionMessage) => void;
 export type GetStatus = (agent: AskRequest['agent']) => Promise<AgentStatus>;
@@ -41,6 +41,7 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
   };
 
   let release: (() => void) | null = null;
+  let worktree: string | null = null;
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), AGENT_TIMEOUT_MS);
   const agentSignal = AbortSignal.any([signal, timeout.signal]);
@@ -88,7 +89,9 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
     } catch {
       throw new AskError('cancelled', 'Stopped.');
     }
+    worktree = dir;
     await prepareWorktree(clone, dir, ctx.headSha);
+    const baseline = new Set(await changedFiles(dir));
     log(requestId, 'worktree ready', `+${Date.now() - started}ms`);
 
     const selections = await resolveSelections(clone, ctx.baseSha, ctx.headSha, req.selections);
@@ -172,7 +175,7 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
     if (timeout.signal.aborted) throw new AskError('timeout', `${adapter.label} timed out after ${AGENT_TIMEOUT_MS / 60_000} minutes.`);
     if (signal.aborted) throw new AskError('cancelled', 'Stopped.');
 
-    const changed = await changedFiles(dir);
+    const changed = (await changedFiles(dir)).filter((line) => !baseline.has(line));
     if (changed.length) {
       log(requestId, `agent left ${changed.length} changed files in the worktree`);
       emit({ type: 'tool', summary: `Warning: the agent changed ${changed.length} file(s) in the worktree; they will be discarded.` });
@@ -192,6 +195,7 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
     emit({ type: 'error', code: e.code, message: e.message, fixSteps: e.fixSteps });
   } finally {
     clearTimeout(timer);
+    if (worktree) await discardWorktreeChanges(worktree).catch((err) => log(requestId, 'worktree cleanup failed', String(err)));
     release?.();
   }
 }

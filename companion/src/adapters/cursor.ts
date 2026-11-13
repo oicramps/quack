@@ -20,6 +20,19 @@ interface Cli {
   version: string;
   /** Can run as an Agent Client Protocol server (`<bin> acp`), which Quack requires. */
   acp: boolean;
+  /** `acp` argv, with sandbox and ask mode when this CLI advertises them. */
+  spawnArgs: string[];
+}
+
+/** Argv for `cursor-agent acp`. Sandbox and ask mode are omitted when the installed CLI doesn't have them. */
+export function cursorAcpArgs(help: string): string[] {
+  const args: string[] = [];
+  if (help.includes('--sandbox')) args.push('--sandbox', 'enabled');
+  if (help.includes('--skip-worktree-setup')) args.push('--skip-worktree-setup');
+  // `--model` contains the letters of `--mode`; don't treat that as the mode flag.
+  if (/--mode(?![A-Za-z0-9-])/.test(help)) args.push('--mode', 'ask');
+  args.push('acp');
+  return args;
 }
 
 async function findCli(): Promise<Cli | null> {
@@ -31,12 +44,14 @@ async function findCli(): Promise<Cli | null> {
     run(bin, ['--help'], { timeoutMs: 15_000 }),
     run(bin, ['acp', '--help'], { timeoutMs: 15_000 }),
   ]);
-  if (path.basename(bin) === 'agent' && !/cursor/i.test(help.stdout + help.stderr)) return null;
+  const helpText = help.stdout + help.stderr;
+  if (path.basename(bin) === 'agent' && !/cursor/i.test(helpText)) return null;
   return {
     bin,
     name: path.basename(bin),
     version: version.stdout.trim(),
     acp: /Agent Client Protocol/i.test(acpHelp.stdout + acpHelp.stderr),
+    spawnArgs: cursorAcpArgs(helpText),
   };
 }
 
@@ -75,7 +90,7 @@ async function models(cli: Cli): Promise<string[]> {
   try {
     const dir = path.join(QUACK_DIR, 'model-probe');
     fs.mkdirSync(dir, { recursive: true });
-    const list = await probeAcpModels(cli.bin, dir);
+    const list = await probeAcpModels(cli.bin, dir, cli.spawnArgs);
     if (list.length) {
       rememberModels(list);
       return ['', ...list.map((m) => m.id)];
@@ -125,7 +140,7 @@ export const cursorAdapter: Adapter = {
       yield { type: 'error', message: cli ? 'This Cursor CLI is too old for Quack. Update it and try again.' : 'Cursor CLI not found.' };
       return;
     }
-    yield* askAcp(cli.bin, opts, rememberModels);
+    yield* askAcp(cli.bin, opts, rememberModels, cli.spawnArgs);
   },
 
   closeSession: closeAcpSession,

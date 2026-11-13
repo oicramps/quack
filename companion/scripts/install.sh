@@ -1,6 +1,6 @@
 #!/bin/sh
 # Downloads the Quack companion from GitHub Releases and registers its native
-# messaging host for Chrome, Edge and Chromium. No npm registry or repo clone
+# messaging host for Chrome, Edge, Brave, and Chromium. No npm registry or repo clone
 # required — only Node 20+ and curl.
 set -eu
 

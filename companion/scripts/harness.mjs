@@ -25,7 +25,10 @@ const child = process.env.QUACK_LAUNCHER
       stdio: ['pipe', 'pipe', 'inherit'],
       env: { HOME: process.env.HOME, USER: process.env.USER, PATH: '/usr/bin:/bin:/usr/sbin:/sbin', SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK },
     })
-  : spawn(process.execPath, [bundle, origin], { stdio: ['pipe', 'pipe', 'inherit'] });
+  : spawn(process.execPath, [bundle, origin], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+      env: { ...process.env, QUACK_ALLOW_DEV: '1' },
+    });
 const started = Date.now();
 const t = () => `+${String(Date.now() - started).padStart(6)}ms`;
 

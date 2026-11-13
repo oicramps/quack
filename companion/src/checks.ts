@@ -28,7 +28,29 @@ export function parseRunLink(link: string): { runId?: string; jobId?: string } {
 
 export function tailLog(text: string, lines = TAIL_LINES, maxChars = PER_LOG_CHARS): string {
   const tail = text.trimEnd().split(/\r?\n/).slice(-lines).join('\n');
-  return tail.length <= maxChars ? tail : tail.slice(tail.length - maxChars);
+  const sliced = tail.length <= maxChars ? tail : tail.slice(tail.length - maxChars);
+  return redactSecrets(sliced);
+}
+
+const SECRET_PATTERNS: { pattern: RegExp; replacement: string }[] = [
+  { pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g, replacement: '[redacted]' },
+  { pattern: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/g, replacement: '[redacted]' },
+  { pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, replacement: '[redacted]' },
+  { pattern: /\bglpat-[A-Za-z0-9\-_]{16,}\b/g, replacement: '[redacted]' },
+  { pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, replacement: '[redacted]' },
+  { pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}/g, replacement: '[redacted]' },
+  { pattern: /\bsk-(?:live|test|proj|ant)-[A-Za-z0-9\-_]{10,}\b/g, replacement: '[redacted]' },
+  { pattern: /\bBearer\s+[A-Za-z0-9\-._~+/]+=*/gi, replacement: 'Bearer [redacted]' },
+  { pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, replacement: '[redacted]' },
+  {
+    pattern: /\b(api[_-]?key|secret|token|password|passwd|authorization)\b(\s*[=:]\s*)(?:"[^"]*"|'[^']*'|\S+)/gi,
+    replacement: '$1$2[redacted]',
+  },
+];
+
+/** Masks credentials that failed jobs often print, before a log is shown or sent to an agent. */
+export function redactSecrets(text: string): string {
+  return SECRET_PATTERNS.reduce((out, { pattern, replacement }) => out.replace(pattern, replacement), text);
 }
 
 export function failureRate(conclusions: string[]): { failed: number; total: number } {

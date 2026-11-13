@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import type { CodeSelection } from '@quack/shared';
-import { run } from './exec.ts';
+import { runGit } from './exec.ts';
 import { log } from './log.ts';
-import { isSafeRepoPath } from './validate.ts';
+import { asCommitSha, isSafeRepoPath } from './validate.ts';
 
 const MAX_LINES = 300;
 
@@ -12,13 +12,18 @@ export function fileAnchor(path: string): string {
 }
 
 async function changedPaths(clone: string, baseSha: string, headSha: string): Promise<string[]> {
-  const res = await run('git', ['-C', clone, 'diff', '--name-only', '--no-renames', `${baseSha}...${headSha}`]);
+  const base = asCommitSha(baseSha);
+  const head = asCommitSha(headSha);
+  if (!base || !head) return [];
+  const res = await runGit(['-C', clone, 'diff', '--name-only', '--no-renames', `${base}...${head}`]);
   return res.code === 0 ? res.stdout.split('\n').filter(Boolean) : [];
 }
 
 /** Reads lines from a committed file with `git show`, so symlinks in the PR can't point outside the repo. */
 async function readLines(clone: string, sha: string, path: string, start: number, end: number): Promise<string | undefined> {
-  const res = await run('git', ['-C', clone, 'show', `${sha}:${path}`], { maxBuffer: 64 * 1024 * 1024 });
+  const commit = asCommitSha(sha);
+  if (!commit) return undefined;
+  const res = await runGit(['-C', clone, 'show', `${commit}:${path}`], { maxBuffer: 64 * 1024 * 1024 });
   if (res.code !== 0) return undefined;
   const lines = res.stdout.split('\n');
   const last = Math.min(end, start + MAX_LINES - 1, lines.length);

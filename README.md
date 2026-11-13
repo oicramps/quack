@@ -2,11 +2,11 @@
 
 Ask your local **Claude Code** or **Cursor** about any GitHub pull request with full repository context—without stashing local work or switching branches.
 
-Quack pairs a Chrome/Edge side-panel extension with a lightweight local companion ([`quack-companion`](https://www.npmjs.com/package/quack-companion)). When you ask a question on a PR, the companion fetches the PR commit into a separate, detached git worktree and runs your local AI CLI there in read-only mode.
+Quack pairs a Chrome, Edge, and Brave side-panel extension with a lightweight local companion ([`quack-companion`](https://www.npmjs.com/package/quack-companion)). When you ask a question on a PR, the companion fetches the PR commit into a separate, detached git worktree and runs your local AI CLI there in read-only mode.
 
 ```mermaid
 flowchart LR
-  GH["GitHub PR Tab<br/>(diff & line selection)"] --> EXT["Quack Side Panel<br/>(Chrome / Edge)"]
+  GH["GitHub PR Tab<br/>(diff & line selection)"] --> EXT["Quack Side Panel<br/>(Chrome / Edge / Brave)"]
   EXT <-->|"Native Messaging<br/>(stdio)"| COMP["quack-companion<br/>(spawned on demand)"]
   COMP -->|"git fetch pull/N/head"| CLONE["Your Local Clone<br/>(branches untouched)"]
   CLONE --> WT["Detached Worktree<br/>(~/.quack/worktrees)"]
@@ -25,10 +25,10 @@ flowchart LR
 - *(Optional)* **GitHub CLI** (`gh`), signed in, to enable **Check CI** failure triage
 
 ### 1. Install the Extension
-Install **[Quack from the Chrome Web Store](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)**.
+Install **[Quack from the Chrome Web Store](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)** in Chrome, Edge, or Brave. Brave uses that same listing.
 
 ### 2. Register the Local Companion
-Run once in your terminal (registers Chrome, Edge, and Chromium):
+Run once in your terminal (registers Chrome, Edge, Brave, and Chromium, including Brave Beta, Dev, and Nightly):
 
 ```sh
 npx quack-companion@latest install
@@ -101,7 +101,7 @@ yarn test                                   # Run companion unit tests
 yarn typecheck                              # Type-check all workspaces
 ```
 
-To load your local build in Chrome: open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `extension/.output/chrome-mv3` (uses `DEV_EXTENSION_ID`).
+To load your local build in Chrome, Edge, or Brave: open `chrome://extensions` (`brave://extensions` in Brave), enable **Developer mode**, click **Load unpacked**, and select `extension/.output/chrome-mv3` (uses `DEV_EXTENSION_ID`, requires `yarn install-host`).
 
 ## Further Reading
 

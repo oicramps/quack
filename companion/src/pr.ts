@@ -1,8 +1,8 @@
 import type { PrRef } from '@quack/shared';
-import { findBinary, run } from './exec.ts';
+import { findBinary, run, runGit } from './exec.ts';
 import { log } from './log.ts';
-import { isSafeBranch } from './validate.ts';
-import { ensureCommit, fetchPr, hasCommit } from './worktree.ts';
+import { asCommitSha, isSafeBranch } from './validate.ts';
+import { GitError, ensureCommit, fetchPr, hasCommit } from './worktree.ts';
 
 export interface PrContext {
   headSha: string;
@@ -42,13 +42,16 @@ async function viaGh(pr: PrRef): Promise<GhPr | null> {
 /** Fetches `refs/heads/<baseRef>` from origin and computes the merge-base with `headSha`. */
 async function mergeBase(clone: string, baseRef: string, headSha: string): Promise<string> {
   if (!isSafeBranch(baseRef)) throw new Error('invalid base branch name');
-  const fetch = await run('git', ['-C', clone, 'fetch', '--no-tags', '--quiet', 'origin', `refs/heads/${baseRef}`], {
+  const head = asCommitSha(headSha);
+  if (!head) throw new Error('invalid head commit');
+  const fetch = await runGit(['-C', clone, 'fetch', '--no-tags', '--quiet', 'origin', `refs/heads/${baseRef}`], {
     timeoutMs: 120_000,
   });
   if (fetch.code !== 0) throw new Error(`could not fetch base branch ${baseRef}`);
-  const res = await run('git', ['-C', clone, 'merge-base', 'FETCH_HEAD', headSha]);
-  if (res.code !== 0) throw new Error('could not find the merge base');
-  return res.stdout.trim();
+  const res = await runGit(['-C', clone, 'merge-base', 'FETCH_HEAD', head]);
+  const base = asCommitSha(res.stdout);
+  if (res.code !== 0 || !base) throw new Error('could not find the merge base');
+  return base;
 }
 
 /**
@@ -65,15 +68,18 @@ export async function resolvePr(clone: string, pr: PrRef): Promise<PrContext> {
       await ensureCommit(clone, pr.headSha).catch(() => log('page head SHA could not be fetched, using the PR head'));
     }
     if (await hasCommit(clone, pr.headSha)) {
-      headSha = (await run('git', ['-C', clone, 'rev-parse', `${pr.headSha}^{commit}`])).stdout.trim();
+      const parsed = asCommitSha((await runGit(['-C', clone, 'rev-parse', `${asCommitSha(pr.headSha)}^{commit}`])).stdout);
+      if (parsed) headSha = parsed;
     }
   }
 
   let baseSha: string;
-  if (gh?.baseRefOid) {
-    await ensureCommit(clone, gh.baseRefOid);
-    baseSha = gh.baseRefOid;
+  const ghBase = asCommitSha(gh?.baseRefOid);
+  if (ghBase) {
+    await ensureCommit(clone, ghBase);
+    baseSha = ghBase;
   } else {
+    if (gh?.baseRefOid) log('ignoring gh baseRefOid that is not a commit id');
     baseSha = await mergeBase(clone, gh?.baseRefName ?? pr.baseRef ?? 'main', headSha);
   }
 
@@ -89,7 +95,10 @@ const MAX_DIFF_CHARS = 120_000;
 
 /** Computes `git diff baseSha...headSha`, truncated to `MAX_DIFF_CHARS`. */
 export async function prDiff(clone: string, baseSha: string, headSha: string): Promise<{ diff: string; truncated: boolean }> {
-  const res = await run('git', ['-C', clone, 'diff', '--no-color', `${baseSha}...${headSha}`], {
+  const base = asCommitSha(baseSha);
+  const head = asCommitSha(headSha);
+  if (!base || !head) throw new GitError('refusing to diff a non-commit id');
+  const res = await runGit(['-C', clone, 'diff', '--no-color', `${base}...${head}`], {
     timeoutMs: 60_000,
     maxBuffer: 256 * 1024 * 1024,
   });

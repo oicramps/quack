@@ -1,6 +1,6 @@
 # quack-companion
 
-Local native messaging host for **[Quack](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)** — the Chrome and Edge extension that lets you ask your local **Claude Code** or **Cursor** about any GitHub pull request with full repository context, without stashing work or switching branches.
+Local native messaging host for **[Quack](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)** — the Chrome, Edge, and Brave extension that lets you ask your local **Claude Code** or **Cursor** about any GitHub pull request with full repository context, without stashing work or switching branches.
 
 - **Install Extension**: [Quack on Chrome Web Store](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)
 - **Source & Docs**: [github.com/oicramps/quack](https://github.com/oicramps/quack)
@@ -9,7 +9,7 @@ Local native messaging host for **[Quack](https://chromewebstore.google.com/deta
 
 ## Quick Start
 
-1. Install the **[Quack extension](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)** in Chrome or Edge.
+1. Install the **[Quack extension](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)** in Chrome, Edge, or Brave. Brave installs that same Chrome Web Store listing.
 2. Register the local companion once in your terminal:
 
 ```sh
@@ -24,7 +24,7 @@ npx quack-companion@latest install
 
 ## How It Works
 
-Browser extensions are sandboxed and cannot run `git` or local CLIs directly. Chrome starts `quack-companion` automatically when you open the Quack side panel and stops it as soon as the panel closes—no background daemon or open terminal needed.
+Browser extensions are sandboxed and cannot run `git` or local CLIs directly. The browser starts `quack-companion` automatically when you open the Quack side panel and stops it as soon as the panel closes—no background daemon or open terminal needed.
 
 ```mermaid
 flowchart TD
