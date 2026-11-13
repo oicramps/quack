@@ -34,13 +34,15 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-          # Sync package.json versions if someone bumped QUACK_VERSION alone
+          # Sync package.json versions (and internal @quack/* deps) if someone bumped QUACK_VERSION alone
           node -e '
             const fs = require("fs");
             const v = process.argv[1];
             for (const p of ["package.json", "shared/package.json", "companion/package.json", "extension/package.json"]) {
               const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
               pkg.version = v;
+              if (pkg.dependencies?.["@quack/shared"]) pkg.dependencies["@quack/shared"] = v;
+              if (pkg.devDependencies?.["@quack/shared"]) pkg.devDependencies["@quack/shared"] = v;
               fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
             }
           ' "$VERSION"
