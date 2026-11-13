@@ -1,5 +1,5 @@
 import type { AgentId, AgentStatus, CompanionMessage, ExtensionMessage } from '@quack/shared';
-import { ALLOWED_EXTENSION_IDS, PROTOCOL_VERSION, QUACK_VERSION } from '@quack/shared';
+import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, PROTOCOL_VERSION, QUACK_VERSION } from '@quack/shared';
 import { adapters } from './adapters/index.ts';
 import { listFailingChecks } from './checks.ts';
 import { MessageDecoder, encodeMessage } from './framing.ts';
@@ -11,9 +11,14 @@ const STATUS_TTL_MS = 60_000;
 // Chrome limits host-to-extension native messages to 1 MB; chunk large text deltas to 64 KB.
 const MAX_TEXT_DELTA = 64 * 1024;
 
-/** Checks whether the caller's `chrome-extension://<id>/` origin is allowlisted. */
-export function isAllowedOrigin(origin: string | undefined): boolean {
-  return ALLOWED_EXTENSION_IDS.some((id) => origin === `chrome-extension://${id}/`);
+/**
+ * Checks whether the caller's `chrome-extension://<id>/` origin is allowlisted.
+ * The unpacked dev id is accepted only when this process was launched with
+ * `QUACK_ALLOW_DEV=1` (the `--dev` install). Store installs leave it unset.
+ */
+export function isAllowedOrigin(origin: string | undefined, allowDev = process.env.QUACK_ALLOW_DEV === '1'): boolean {
+  const ids = allowDev ? ALLOWED_EXTENSION_IDS : ALLOWED_EXTENSION_IDS.filter((id) => id !== DEV_EXTENSION_ID);
+  return ids.some((id) => origin === `chrome-extension://${id}/`);
 }
 
 /** Runs the Chrome Native Messaging stdio event loop for an allowlisted extension origin. */

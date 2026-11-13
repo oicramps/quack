@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   }
   switch (arg) {
     case 'install':
-      install(process.argv[1]);
+      install(process.argv[1], { dev: process.argv.includes('--dev') });
       break;
     case 'uninstall':
       uninstall();
@@ -39,7 +39,8 @@ async function main(): Promise<void> {
       console.log(`quack-companion ${QUACK_VERSION}
 
 Usage:
-  quack-companion install     Register the native messaging host for Chrome, Edge and Chromium
+  quack-companion install [--dev]   Register the native messaging host for Chrome, Edge, Brave, and Chromium
+                                --dev also allows the unpacked extension id
   quack-companion uninstall   Remove the host registration
   quack-companion prune       Remove all Quack worktrees and their refs/pr-review refs
   quack-companion doctor      Print config and agent readiness

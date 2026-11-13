@@ -20,8 +20,8 @@ export class AcpClient {
   private stderr = '';
   private record = recorder('cursor-acp');
 
-  constructor(bin: string, cwd: string) {
-    this.child = spawnStreaming(bin, ['acp'], cwd, { stdin: true });
+  constructor(bin: string, cwd: string, spawnArgs: string[]) {
+    this.child = spawnStreaming(bin, spawnArgs, cwd, { stdin: true });
     this.child.stdin!.on('error', () => {});
     this.child.stderr!.setEncoding('utf8');
     this.child.stderr!.on('data', (chunk: string) => {
@@ -210,8 +210,8 @@ export function closeAllAcpSessions(): void {
 
 const CLIENT_INFO = { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } };
 
-async function openSession(bin: string, opts: AskOpts): Promise<LiveSession> {
-  const client = new AcpClient(bin, opts.cwd);
+async function openSession(bin: string, opts: AskOpts, spawnArgs: string[]): Promise<LiveSession> {
+  const client = new AcpClient(bin, opts.cwd, spawnArgs);
   const onAbort = () => client.close();
   opts.signal.addEventListener('abort', onAbort, { once: true });
   try {
@@ -249,7 +249,12 @@ async function openSession(bin: string, opts: AskOpts): Promise<LiveSession> {
  * Sends a prompt over a persistent ACP session. Reuses the live process across
  * follow-ups and terminates it after `ACP_IDLE_MS` idle, on `close_session`, or on host exit.
  */
-export async function* askAcp(bin: string, opts: AskOpts, onModels?: (models: AcpModel[]) => void): AsyncGenerator<AdapterEvent> {
+export async function* askAcp(
+  bin: string,
+  opts: AskOpts,
+  onModels?: (models: AcpModel[]) => void,
+  spawnArgs: string[] = ['acp'],
+): AsyncGenerator<AdapterEvent> {
   let s = opts.sessionId ? sessions.get(opts.sessionId) : undefined;
   if (s && (!s.client.alive || s.cwd !== opts.cwd || s.busy)) {
     closeAcpSession(s.sessionId);
@@ -259,7 +264,7 @@ export async function* askAcp(bin: string, opts: AskOpts, onModels?: (models: Ac
     clearTimeout(s.idle);
   } else {
     try {
-      s = await openSession(bin, opts);
+      s = await openSession(bin, opts, spawnArgs);
     } catch (err) {
       if (!opts.signal.aborted) yield { type: 'error', message: (err as Error).message };
       return;
@@ -343,8 +348,8 @@ export async function* askAcp(bin: string, opts: AskOpts, onModels?: (models: Ac
 }
 
 /** Opens a throwaway session in `cwd` to read the model list. */
-export async function probeAcpModels(bin: string, cwd: string): Promise<AcpModel[]> {
-  const client = new AcpClient(bin, cwd);
+export async function probeAcpModels(bin: string, cwd: string, spawnArgs: string[] = ['acp']): Promise<AcpModel[]> {
+  const client = new AcpClient(bin, cwd, spawnArgs);
   const timer = setTimeout(() => client.close(), 20_000);
   try {
     await client.request('initialize', CLIENT_INFO);

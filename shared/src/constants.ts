@@ -1,4 +1,4 @@
-export const QUACK_VERSION = '0.2.0';
+export const QUACK_VERSION = '0.2.1';
 
 /**
  * Wire protocol version. Increment only on breaking changes between extension

@@ -36,6 +36,17 @@ export interface RunResult {
   stderr: string;
 }
 
+/**
+ * Overrides applied to every git command. A PR can otherwise run code through
+ * `core.hooksPath` (husky) or `core.fsmonitor` during checkout.
+ */
+export const GIT_LOCKDOWN = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
+
+/** Runs git with hooks and the filesystem monitor forced off. Never goes through a shell. */
+export function runGit(args: string[], opts: { cwd?: string; timeoutMs?: number; maxBuffer?: number } = {}): Promise<RunResult> {
+  return run('git', [...GIT_LOCKDOWN, ...args], opts);
+}
+
 /** Runs a program with an argument array. Never goes through a shell. */
 export function run(
   file: string,

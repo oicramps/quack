@@ -3,6 +3,13 @@ import type { AskRequest, AgentId, CodeSelection, ExtensionMessage, HistoryTurn,
 const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const REPO = /^[A-Za-z0-9._-]{1,100}$/;
 const SHA = /^[0-9a-f]{7,40}$/;
+
+/** A git object id, or null when the value could be a flag or a refspec. */
+export function asCommitSha(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const sha = value.trim().toLowerCase();
+  return SHA.test(sha) ? sha : null;
+}
 const BRANCH = /^[A-Za-z0-9._\/-]{1,250}$/;
 // Models and session IDs are passed as CLI arguments; disallow leading dashes to prevent flag injection.
 const MODEL = /^(?:[A-Za-z0-9][A-Za-z0-9._:\/-]{0,99})?$/;

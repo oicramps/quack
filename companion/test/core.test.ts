@@ -1,12 +1,20 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 import { MessageDecoder, encodeMessage } from '../src/framing.ts';
 import { isAllowedOrigin } from '../src/host.ts';
+import { install, nativeMessagingHostDirs, selectInstallHostDirs, uninstall } from '../src/install.ts';
 import { buildCiPrompt, buildFollowUp, buildPrompt } from '../src/prompt.ts';
 import { parseGitHubRemote } from '../src/repo.ts';
 import { fileAnchor } from '../src/selection.ts';
 import { ciCommentText, parseCiReport } from '@quack/shared';
-import { ValidationError, isSafeRepoPath, validateMessage } from '../src/validate.ts';
+import { claudeGuardArgs } from '../src/adapters/claude.ts';
+import { cursorAcpArgs } from '../src/adapters/cursor.ts';
+import { prDiff } from '../src/pr.ts';
+import { ValidationError, asCommitSha, isSafeRepoPath, validateMessage } from '../src/validate.ts';
+import { GitError, ensureCommit, hasCommit } from '../src/worktree.ts';
 
 test('framing round-trips messages split across chunks', () => {
   const a = encodeMessage({ type: 'status', requestId: 'r1' });
@@ -20,10 +28,97 @@ test('framing round-trips messages split across chunks', () => {
   ]);
 });
 
+test('native messaging hosts include every Brave channel and respect XDG_CONFIG_HOME', () => {
+  const darwin = nativeMessagingHostDirs('darwin', '/Users/ada', {});
+  const linux = nativeMessagingHostDirs('linux', '/home/ada', {});
+  const xdg = nativeMessagingHostDirs('linux', '/home/ada', { XDG_CONFIG_HOME: '/home/ada/.xdg' });
+  const relativeXdg = nativeMessagingHostDirs('linux', '/home/ada', { XDG_CONFIG_HOME: 'relative/path' });
+  for (const channel of ['Brave-Browser', 'Brave-Browser-Beta', 'Brave-Browser-Dev', 'Brave-Browser-Nightly']) {
+    assert.ok(darwin.includes(`/Users/ada/Library/Application Support/BraveSoftware/${channel}/NativeMessagingHosts`));
+    assert.ok(linux.includes(`/home/ada/.config/BraveSoftware/${channel}/NativeMessagingHosts`));
+    assert.ok(xdg.includes(`/home/ada/.xdg/BraveSoftware/${channel}/NativeMessagingHosts`));
+    assert.ok(relativeXdg.includes(`/home/ada/.config/BraveSoftware/${channel}/NativeMessagingHosts`));
+  }
+  assert.equal(darwin.length, 7);
+  assert.throws(() => nativeMessagingHostDirs('win32', '/Users/ada', {}), /Unsupported platform/);
+});
+
+test('install registers installed browsers without creating unused channel dirs, and uninstall cleans up', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'quack-install-test-'));
+  try {
+    const home = path.join(tmp, 'home');
+    const binDir = path.join(tmp, 'bin');
+    const bundle = path.join(tmp, 'bundle.cjs');
+    fs.writeFileSync(bundle, 'console.log("ok");\n');
+
+    // Before any browser profile exists, only the primary stable channels are selected.
+    const fallback = selectInstallHostDirs('linux', home, {});
+    assert.deepEqual(fallback, [
+      path.join(home, '.config', 'google-chrome', 'NativeMessagingHosts'),
+      path.join(home, '.config', 'microsoft-edge', 'NativeMessagingHosts'),
+      path.join(home, '.config', 'chromium', 'NativeMessagingHosts'),
+      path.join(home, '.config', 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'),
+    ]);
+
+    // When Brave Stable exists, only Brave Stable is registered (no Edge/Nightly/Beta clutter).
+    const braveProfile = path.join(home, '.config', 'BraveSoftware', 'Brave-Browser');
+    fs.mkdirSync(braveProfile, { recursive: true });
+    install(bundle, { binDir, platform: 'linux', home, env: {} });
+
+    const braveManifest = path.join(braveProfile, 'NativeMessagingHosts', 'com.quack.companion.json');
+    assert.ok(fs.existsSync(braveManifest));
+    assert.ok(!fs.existsSync(path.join(home, '.config', 'BraveSoftware', 'Brave-Browser-Nightly')));
+    assert.ok(!fs.existsSync(path.join(home, '.config', 'microsoft-edge')));
+
+    const parsed = JSON.parse(fs.readFileSync(braveManifest, 'utf8'));
+    assert.deepEqual(parsed.allowed_origins, ['chrome-extension://hkdgklakkcffcmegdagdoigpaefhlipj/']);
+
+    uninstall({ binDir, platform: 'linux', home, env: {} });
+    assert.ok(!fs.existsSync(braveManifest));
+    assert.ok(!fs.existsSync(binDir));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('only the Quack extension origin is accepted', () => {
-  assert.ok(isAllowedOrigin('chrome-extension://ikkjkdmcnmifldjmajjjgabanjomhikf/'));
+  assert.ok(isAllowedOrigin('chrome-extension://hkdgklakkcffcmegdagdoigpaefhlipj/'));
+  assert.ok(!isAllowedOrigin('chrome-extension://ikkjkdmcnmifldjmajjjgabanjomhikf/'));
+  assert.ok(isAllowedOrigin('chrome-extension://ikkjkdmcnmifldjmajjjgabanjomhikf/', true));
   assert.ok(!isAllowedOrigin('chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/'));
   assert.ok(!isAllowedOrigin(undefined));
+});
+
+test('only real commit ids are passed to git', async () => {
+  assert.equal(asCommitSha('--upload-pack=evil'), null);
+  assert.equal(asCommitSha('+refs/heads/main:refs/heads/main'), null);
+  assert.equal(asCommitSha('A'.repeat(40)), 'a'.repeat(40));
+  assert.equal(asCommitSha('abc1234'), 'abc1234');
+  await assert.rejects(() => ensureCommit('/tmp', '--upload-pack=evil'), GitError);
+  assert.equal(await hasCommit('/tmp', '--force'), false);
+  await assert.rejects(() => prDiff('/tmp', '--output=/tmp/x', 'a'.repeat(40)), GitError);
+});
+
+test('agent guard flags follow what the installed CLI advertises', () => {
+  assert.deepEqual(claudeGuardArgs('--restricted\n--strict-mcp-config\n--permission-prompts\n--disallowedTools'), [
+    '--restricted',
+    '--strict-mcp-config',
+    '--permission-prompts',
+    'none',
+  ]);
+  const older = claudeGuardArgs('--setting-sources\n--disallowed-tools');
+  assert.deepEqual(older.slice(0, 2), ['--setting-sources', 'user']);
+  assert.ok(older.includes('Bash') && older.includes('mcp__*'));
+  assert.deepEqual(claudeGuardArgs('nothing'), []);
+  assert.deepEqual(cursorAcpArgs('--model <model>\n--mode <mode>\n--sandbox <mode>\n--skip-worktree-setup'), [
+    '--sandbox',
+    'enabled',
+    '--skip-worktree-setup',
+    '--mode',
+    'ask',
+    'acp',
+  ]);
+  assert.deepEqual(cursorAcpArgs('--model <model>'), ['acp']);
 });
 
 test('GitHub remotes in every form map to owner/repo', () => {
@@ -188,14 +283,15 @@ test('a CI prompt asks for a quack-ci block and includes the log tail', () => {
         name: 'test / unit',
         workflow: 'CI',
         link: 'https://github.com/o/r/actions/runs/1/job/2',
-        log: 'expected 204, got 403',
+        log: `expected 204, got 403\ntoken=ghp_${'a'.repeat(36)}`,
         recent: { failed: 1, total: 20, branch: 'main' },
       },
     ],
   });
-  for (const s of ['quack-ci', 'caused_by_pr', 'expected 204, got 403', 'failed 1 of the last 20', 'Explain failing CI']) {
+  for (const s of ['quack-ci', 'caused_by_pr', 'expected 204, got 403', 'failed 1 of the last 20', 'Explain failing CI', 'untrusted data']) {
     assert.ok(p.includes(s), s);
   }
+  assert.equal(p.includes('ghp_'), false);
   const unavailable = buildCiPrompt({
     owner: 'o',
     repo: 'r',

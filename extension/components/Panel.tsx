@@ -1309,17 +1309,6 @@ const TurnView = memo(function TurnView({
             <span className="muted meta">{meta}</span>
           </div>
 
-          {isRunning && (
-            <div className="thinking">
-              <StatusIcon kind="loading" size={18} />
-              <ThinkingHeadline
-                phase={pickPhase({ preparing, activity: turn.activity, text: turn.text, elapsedMs, task: turn.task })}
-                agent={label}
-                activity={turn.activity}
-              />
-            </div>
-          )}
-
           {turn.activity.length > 0 &&
             (isRunning || activityOpen ? (
               <ul className="activity" aria-live="polite">
@@ -1348,6 +1337,17 @@ const TurnView = memo(function TurnView({
             ))}
 
           {turn.text && <AnswerBody text={turn.text} link={link} streaming={isRunning} checks={checks} />}
+
+          {isRunning && (
+            <div className="thinking">
+              <StatusIcon kind="loading" size={18} />
+              <ThinkingHeadline
+                phase={pickPhase({ preparing, activity: turn.activity, text: turn.text, elapsedMs, task: turn.task })}
+                agent={label}
+                activity={turn.activity}
+              />
+            </div>
+          )}
 
           {turn.status === 'done' && turn.text && (drafting ? (
             <DraftComment

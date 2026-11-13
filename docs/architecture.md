@@ -14,7 +14,7 @@ Quack is split into three TypeScript workspaces so the browser UI and local OS o
 
 ```mermaid
 flowchart TB
-  subgraph Browser["Chrome / Edge (Manifest V3)"]
+  subgraph Browser["Chrome / Edge / Brave (Manifest V3)"]
     CS["github.content.ts<br/>PR metadata, diff selection & Ask button"]
     SP["Side Panel (React)<br/>Thread UI, CI cards & review drafts"]
     BG["background.ts<br/>Multiplexes 1 native port by requestId"]
@@ -91,10 +91,10 @@ sequenceDiagram
 
 | Adapter | CLI Invocation | Read-Only Enforcement | Follow-up Sessions |
 | --- | --- | --- | --- |
-| **Cursor** (`cursor.ts`, `acp.ts`) | `cursor-agent acp` (JSON-RPC 2.0 over stdio) | Session mode set to `ask`; `writeTextFile: false`, `terminal: false`; permission prompts auto-cancelled | Keeps `AcpClient` alive in memory for 15 min (`ACP_IDLE_MS`) |
-| **Claude Code** (`claude.ts`, `stream.ts`) | `claude -p --output-format stream-json --verbose` | Runs with `--permission-mode plan` | Resumes via `--resume <sessionId>` |
+| **Cursor** (`cursor.ts`, `acp.ts`) | `cursor-agent acp` (JSON-RPC 2.0 over stdio) | `--sandbox enabled`, `--mode ask`, and `--skip-worktree-setup` when the CLI advertises them. The session is also set to `ask`, with `writeTextFile: false`, `terminal: false`, and permission prompts auto-cancelled | Keeps `AcpClient` alive in memory for 15 min (`ACP_IDLE_MS`) |
+| **Claude Code** (`claude.ts`, `stream.ts`) | `claude -p --output-format stream-json --verbose` | `--permission-mode plan`, plus `--restricted` when the CLI has it (no project settings, hooks, or MCP; file tools stay in the worktree). Older CLIs get `--setting-sources user` and a tool deny list | Resumes via `--resume <sessionId>` |
 
-After every turn, `session.ts` checks `git status --porcelain` in the worktree (`changedFiles`), warns if anything was touched, and `git reset --hard` + `git clean -fdq` runs before the next turn.
+After every turn, `session.ts` checks `git status --porcelain` in the worktree (`changedFiles`), warns if anything new was touched, and `discardWorktreeChanges` runs `git reset --hard` and `git clean -ffdx` before the lock is released. Escaping symlinks are removed before the agent starts. Every git command is run with `core.hooksPath=/dev/null` and `core.fsmonitor=false`.
 
 ---
 
@@ -102,8 +102,8 @@ After every turn, `session.ts` checks `git status --porcelain` in the worktree (
 
 | Boundary | Mechanism |
 | --- | --- |
-| **Origin allowlist** | `startHost` checks Chrome's `chrome-extension://<id>/` argument against `ALLOWED_EXTENSION_IDS` before reading `stdin`. |
-| **No shell execution** | External tools (`git`, `gh`, `cursor-agent`, `claude`) run via `execFile` / `spawn` argument arrays (`exec.ts`), never a shell. |
-| **Strict input validation** | `validate.ts` enforces length caps and regexes on all wire fields; model names, branches, session IDs, and workflow names reject leading `-` to block flag injection. |
+| **Origin allowlist** | `startHost` checks Chrome's `chrome-extension://<id>/` argument before reading `stdin`. The store id is always allowed. The unpacked dev id is allowed only when the launcher was installed with `--dev` (`QUACK_ALLOW_DEV=1`). |
+| **No shell execution** | External tools (`git`, `gh`, `cursor-agent`, `claude`) run via `execFile` / `spawn` argument arrays (`exec.ts`), never a shell. Git is additionally locked to `core.hooksPath=/dev/null` and `core.fsmonitor=false`. |
+| **Strict input validation** | `validate.ts` enforces length caps and regexes on all wire fields; model names, branches, session IDs, and workflow names reject leading `-` to block flag injection. Commit ids from `gh` have to match a SHA before they are passed to git. CI logs are redacted before they enter a prompt. |
 | **Frame bounds** | Incoming frames cap at 64 MB; outgoing text deltas split at 64 KB (`MAX_TEXT_DELTA`) to stay under Chrome's 1 MB native messaging limit. |
 | **Process tree cleanup** | Subprocesses run in their own process group (`detached: true`) and are killed via `SIGTERM` → `SIGKILL` (`killTree`) on cancel or browser disconnect. |
