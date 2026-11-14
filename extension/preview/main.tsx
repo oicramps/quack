@@ -142,7 +142,7 @@ for (const s of AFTER_DONE) scripts[s] = scripts.done;
 class FakeClient {
   private disconnect = new Set<(error: string, ids: string[]) => void>();
   send(message: ExtensionMessage, listener?: (m: CompanionMessage) => void) {
-    if (scenario === 'offline') {
+    if (scenario === 'offline' || scenario === 'no-pr-offline') {
       setTimeout(() => this.disconnect.forEach((l) => l('Specified native messaging host not found.', [message.requestId])), 10);
       return;
     }
@@ -194,7 +194,7 @@ const noSelection = ['empty', 'empty-ci', 'explain-ci', 'loading'].includes(scen
 const page: PanelPage = {
   tabId: 1,
   pr:
-    scenario === 'no-pr'
+    scenario === 'no-pr' || scenario === 'no-pr-offline'
       ? null
       : {
           owner: 'ProjetoParcas',
