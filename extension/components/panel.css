@@ -422,6 +422,9 @@ button.collapse {
   font-weight: 600;
   white-space: nowrap;
 }
+.picker-row > .status:first-child {
+  margin-left: 0;
+}
 .status .dot {
   width: 6px;
   height: 6px;
