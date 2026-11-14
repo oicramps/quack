@@ -501,7 +501,7 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     [],
   );
 
-  const pickers = (
+  const pickers = offline ? null : (
     <>
       <AgentPicker
         agents={agents}
