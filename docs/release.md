@@ -17,12 +17,22 @@ flowchart LR
   CI --> MERGE["Merge to main"]
   MERGE --> CHECK{"GitHub Release<br/>v(QUACK_VERSION)<br/>already exists?"}
   CHECK -->|"Yes"| SKIP["Exit cleanly<br/>(no-op)"]
-  CHECK -->|"No (version bumped)"| REL["Build & Tag vX.Y.Z"]
-  REL --> GHR["GitHub Release<br/>(install.sh + bundle + zips)"]
-  REL --> NPM["npm Registry<br/>(OIDC Trusted Publishing)"]
-  REL --> GHPKG["GitHub Packages<br/>(@owner/quack-companion)"]
-  REL --> CWS["Chrome Web Store<br/>(wxt submit)"]
+  CHECK -->|"No (version bumped)"| REL["build job<br/>(test, typecheck, artifacts)"]
+  REL --> GHR["github-release<br/>(tag + install.sh + bundle + zips)"]
+  REL --> NPM["npm<br/>(OIDC Trusted Publishing)"]
+  REL --> GHPKG["github-packages<br/>(@owner/quack-companion)"]
+  REL --> CWS["chrome<br/>(wxt submit)"]
+  REL --> EDGE["edge<br/>(wxt submit)"]
 ```
+
+Each target is its own job, so one failing target doesn't stop the others. Every job skips work that is already done (existing tag, published version, pending store review), so retrying never needs a version bump.
+
+### Retrying a Failed Release
+
+- **Same run**: open the run in Actions and choose **Re-run failed jobs**. Only the failed targets run again, using the same build.
+- **New run**: Actions → **Release** → **Run workflow** on `main`. This always releases the current `QUACK_VERSION`, and targets that already have it skip themselves.
+
+A push to `main` alone won't retry, because the GitHub Release for that version already exists.
 
 ### Shipping a New Version (Day-to-Day)
 
@@ -38,7 +48,9 @@ flowchart LR
 
 ### 1. npm OIDC Trusted Publishing (No `NPM_TOKEN` Secret Needed)
 Configured at `https://www.npmjs.com/package/quack-companion/access` under **Trusted Publisher (GitHub Actions)**:
-- **Owner**: `oicramps` | **Repository**: `quack` | **Workflow**: `release.yml` | **Allow `npm publish`**: enabled.
+- **Owner**: `oicramps` | **Repository**: `quack` | **Workflow**: `release.yml` | **Environment**: empty | **Allow `npm publish`**: enabled.
+
+The `npm` job fails with `404 Not Found - PUT https://registry.npmjs.org/quack-companion` when any of these fields don't match the run exactly; npm then publishes anonymously. Its verbose log shows the OIDC exchange and why it was refused.
 
 ### 2. GitHub Actions Secrets
 Configured at `Settings -> Secrets and variables -> Actions`:

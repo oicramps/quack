@@ -11,19 +11,27 @@ permissions:
   id-token: write
   packages: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# `build` makes every artifact once; each target then publishes in its own job,
+# so one failing target doesn't block the others. Every publish job skips work
+# that's already done, so "Re-run failed jobs" retries the same version.
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+      should_release: ${{ steps.check.outputs.should_release }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: yarn
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Check version and determine if release is needed
         id: check
@@ -90,13 +98,29 @@ jobs:
           cp extension/.output/store/quackextension-*-chrome.zip release/
           cp extension/.output/store/quackextension-*-edge.zip release/
 
+      - if: steps.check.outputs.should_release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release/
+          if-no-files-found: error
+
+  github-release:
+    needs: build
+    if: needs.build.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
       - name: Tag and publish GitHub Release
-        if: steps.check.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build.outputs.tag }}
         run: |
-          TAG="${{ steps.check.outputs.tag }}"
-          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+          if ! git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null; then
             git tag "$TAG"
             git push origin "$TAG"
           fi
@@ -106,33 +130,57 @@ jobs:
             gh release create "$TAG" release/* --generate-notes --title "$TAG"
           fi
 
-      - name: Publish quack-companion to registry (Trusted Publishing)
-        if: steps.check.outputs.should_release == 'true'
+  npm:
+    needs: build
+    if: needs.build.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      # No registry-url: setup-node would write a placeholder token that npm
+      # falls back to whenever the Trusted Publishing exchange fails.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - name: Publish quack-companion to npm (Trusted Publishing)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          VERSION="${{ steps.check.outputs.version }}"
-          # npm view talks to the registry. yarn info would answer with the
-          # local workspace version after the version-sync step above.
+          # Trusted Publishing needs npm 11.5.1+.
+          npm install -g npm@^11.5.1
           PUBLISHED=$(npm view "quack-companion@${VERSION}" version 2>/dev/null || true)
           if [ "$PUBLISHED" = "$VERSION" ]; then
             echo "quack-companion@${VERSION} is already published; skipping."
             exit 0
           fi
-          # Publishes the tarball built by `yarn --cwd companion pack` using GitHub OIDC Trusted Publishing (no NPM_TOKEN needed).
-          # Trusted Publishing needs npm 11.5.1+; Node 22 bundles npm 10, which falls back to the token and gets a 404.
-          npm install -g npm@^11.5.1
-          npm publish ./release/quack-companion.tgz --access public --provenance
+          # Verbose output includes the Trusted Publishing (OIDC) exchange, which is
+          # the only place npm says why it fell back to anonymous and got a 404.
+          npm publish ./release/quack-companion.tgz --access public --provenance --loglevel verbose
 
-      # GitHub's Packages tab only lists GitHub Packages, not npmjs.
-      # The npm registry requires a scope that matches the repository owner.
+  # GitHub's Packages tab only lists GitHub Packages, not npmjs.
+  # The npm registry requires a scope that matches the repository owner.
+  github-packages:
+    needs: build
+    if: needs.build.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://npm.pkg.github.com'
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
       - name: Publish quack-companion to GitHub Packages
-        if: steps.check.outputs.should_release == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          VERSION="${{ steps.check.outputs.version }}"
           OWNER="${GITHUB_REPOSITORY%%/*}"
           SCOPE="@${OWNER}/quack-companion"
-          echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$NPM_CONFIG_USERCONFIG"
           PUBLISHED=$(npm view "${SCOPE}@${VERSION}" version --registry https://npm.pkg.github.com 2>/dev/null || true)
           if [ "$PUBLISHED" = "$VERSION" ]; then
             echo "${SCOPE}@${VERSION} is already on GitHub Packages; skipping."
@@ -155,8 +203,22 @@ jobs:
           ' "$STAGE/package/package.json" "$SCOPE"
           npm publish "$STAGE/package" --registry https://npm.pkg.github.com --access public
 
+  chrome:
+    needs: build
+    if: needs.build.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
       - name: Submit to Chrome Web Store
-        if: steps.check.outputs.should_release == 'true'
         working-directory: extension
         env:
           CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
@@ -171,7 +233,7 @@ jobs:
           # `wxt submit` is the Chrome Web Store client. It has no "already uploaded"
           # flag, so a repeat of the same version (or a review still pending) is a skip.
           set +e
-          output=$(yarn wxt submit --chrome-zip .output/store/quackextension-*-chrome.zip 2>&1)
+          output=$(yarn wxt submit --chrome-zip ../release/quackextension-*-chrome.zip 2>&1)
           status=$?
           set -e
           printf '%s\n' "$output"
@@ -181,8 +243,22 @@ jobs:
           fi
           exit "$status"
 
+  edge:
+    needs: build
+    if: needs.build.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
       - name: Submit to Edge Add-ons
-        if: steps.check.outputs.should_release == 'true'
         working-directory: extension
         env:
           EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
@@ -193,4 +269,4 @@ jobs:
             echo "Edge Add-ons secrets not configured; skipping store submission."
             exit 0
           fi
-          yarn wxt submit --edge-zip .output/store/quackextension-*-edge.zip
+          yarn wxt submit --edge-zip ../release/quackextension-*-edge.zip
