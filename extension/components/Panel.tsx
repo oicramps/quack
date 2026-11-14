@@ -542,7 +542,11 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
       <div className="quack panel">
         <PanelHeader pickers={pickers} status={status} running={false} />
         {page.notice && <Banner>{page.notice}</Banner>}
-        <NoPullRequest recent={recent} readiness={readiness} />
+        <NoPullRequest
+        recent={recent}
+        readiness={readiness}
+        install={connection.state === 'disconnected' ? { error: connection.error, onRetry: checkStatus } : null}
+      />
       </div>
     );
   }
@@ -811,7 +815,16 @@ function StaleBanner({ from, to, disabled, onReask }: { from: string; to: string
   );
 }
 
-function NoPullRequest({ recent, readiness }: { recent: RecentPr[]; readiness: { kind: 'success' | 'error' | 'loading'; text: string } }) {
+function NoPullRequest({
+  recent,
+  readiness,
+  install,
+}: {
+  recent: RecentPr[];
+  readiness: { kind: 'success' | 'error' | 'loading'; text: string };
+  /** Present when the companion is unreachable, including before any PR is open. */
+  install: { error: string; onRetry: () => void } | null;
+}) {
   return (
     <div className="body start">
       <section className="start-head">
@@ -824,6 +837,13 @@ function NoPullRequest({ recent, readiness }: { recent: RecentPr[]; readiness: {
       <a className="button primary block" href={REVIEW_REQUESTS_URL} target="_blank" rel="noreferrer">
         Open my review requests
       </a>
+      {install && (
+        <CompanionOffline
+          error={install.error}
+          onRetry={install.onRetry}
+          detail="Quack needs its local companion before it can read a pull request. Once installed, your browser starts it on its own."
+        />
+      )}
       {recent.length > 0 && (
         <section className="list-section" aria-labelledby="recent-h">
           <h2 id="recent-h" className="section-title">
@@ -849,9 +869,11 @@ function NoPullRequest({ recent, readiness }: { recent: RecentPr[]; readiness: {
           </div>
         </section>
       )}
-      <div className="start-status" role="status">
-        <StatusIcon kind={readiness.kind} size={14} /> {readiness.text}
-      </div>
+      {!install && (
+        <div className="start-status" role="status">
+          <StatusIcon kind={readiness.kind} size={14} /> {readiness.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -1046,14 +1068,20 @@ function AgentSetup({ status, onRecheck }: { status: AgentStatus; onRecheck: () 
   );
 }
 
-function CompanionOffline({ error, onRetry }: { error: string; onRetry: () => void }) {
+function CompanionOffline({
+  error,
+  onRetry,
+  detail = 'Quack needs its local companion to read this PR’s code. Once installed, your browser starts it on its own.',
+}: {
+  error: string;
+  onRetry: () => void;
+  detail?: string;
+}) {
   return (
     <section className="offline">
       <div>
         <h2 className="display">The duck can’t hear the companion.</h2>
-        <p className="muted">
-          Quack needs its local companion to read this PR’s code. Once installed, your browser starts it on its own.
-        </p>
+        <p className="muted">{detail}</p>
       </div>
       <h3>1. Install it once</h3>
       <CommandBlock command={INSTALL_COMMAND} />
