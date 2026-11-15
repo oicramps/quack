@@ -13,72 +13,120 @@ export interface Config {
   maxWorktrees: number;
 }
 
+export const DEFAULT_SCAN_ROOTS = [
+  '~/Documents/Dev/Projects',
+  '~/Projects',
+  '~/Developer',
+  '~/Development',
+  '~/Dev',
+  '~/repos',
+  '~/src',
+  '~/code',
+  '~/workspace',
+  '~/work',
+  '~/GitHub',
+  '~/git',
+];
+
 const DEFAULTS: Config = {
-  scanRoots: [
-    '~/Documents/Dev/Projects',
-    '~/Projects',
-    '~/Developer',
-    '~/Development',
-    '~/Dev',
-    '~/repos',
-    '~/src',
-    '~/code',
-    '~/workspace',
-    '~/work',
-    '~/GitHub',
-    '~/git',
-  ],
+  scanRoots: DEFAULT_SCAN_ROOTS,
   repoPaths: {},
   worktreeRoot: path.join(QUACK_DIR, 'worktrees').replace(HOME, '~'),
   retentionDays: 7,
   maxWorktrees: 20,
 };
 
-export function loadConfig(): Config {
+export function hasConfigFile(configFile = CONFIG_FILE): boolean {
+  try {
+    return fs.existsSync(configFile);
+  } catch {
+    return false;
+  }
+}
+
+export function loadConfig(configFile = CONFIG_FILE): Config {
   let fromFile: Partial<Config> = {};
   try {
-    fromFile = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    fromFile = JSON.parse(fs.readFileSync(configFile, 'utf8'));
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      writeDefaultConfig();
-    } else {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       log('config unreadable, using defaults:', String(err));
     }
   }
-  const merged = { ...DEFAULTS, ...fromFile };
+  const merged = {
+    ...DEFAULTS,
+    ...fromFile,
+    scanRoots: Array.isArray(fromFile.scanRoots) ? fromFile.scanRoots.filter((s): s is string => typeof s === 'string') : DEFAULTS.scanRoots,
+    repoPaths:
+      fromFile.repoPaths && typeof fromFile.repoPaths === 'object' && !Array.isArray(fromFile.repoPaths)
+        ? fromFile.repoPaths
+        : DEFAULTS.repoPaths,
+  };
   return {
     ...merged,
     scanRoots: merged.scanRoots.map(expandHome),
     repoPaths: Object.fromEntries(
-      Object.entries(merged.repoPaths).map(([k, v]) => [k.toLowerCase(), expandHome(v)]),
+      Object.entries(merged.repoPaths).map(([k, v]) => [k.toLowerCase(), expandHome(String(v))]),
     ),
     worktreeRoot: expandHome(merged.worktreeRoot),
   };
 }
 
-function writeDefaultConfig(): void {
+function readRawConfig(configFile = CONFIG_FILE): Record<string, unknown> {
   try {
-    fs.mkdirSync(QUACK_DIR, { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULTS, null, 2) + '\n', { flag: 'wx' });
-  } catch {
-    // Another process created it first, or the home dir is read-only; defaults still apply.
+    const parsed = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
+  return { ...DEFAULTS };
+}
+
+function writeRawConfig(raw: Record<string, unknown>, configFile = CONFIG_FILE): void {
+  fs.mkdirSync(path.dirname(configFile), { recursive: true });
+  fs.writeFileSync(configFile, JSON.stringify(raw, null, 2) + '\n');
 }
 
 /** Saves an explicit `"owner/repo": "<path>"` mapping into config.json, preserving other settings. */
 export function setRepoPath(ownerRepo: string, cloneDir: string, configFile = CONFIG_FILE): void {
-  let raw: Record<string, unknown> = { ...DEFAULTS };
-  try {
-    const parsed = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) raw = parsed as Record<string, unknown>;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-  }
+  const raw = readRawConfig(configFile);
   const existing =
     raw.repoPaths && typeof raw.repoPaths === 'object' && !Array.isArray(raw.repoPaths)
       ? (raw.repoPaths as Record<string, string>)
       : {};
   raw.repoPaths = { ...existing, [ownerRepo.toLowerCase()]: contractHome(path.resolve(cloneDir)) };
-  fs.mkdirSync(path.dirname(configFile), { recursive: true });
-  fs.writeFileSync(configFile, JSON.stringify(raw, null, 2) + '\n');
+  writeRawConfig(raw, configFile);
+}
+
+/** Saves `scanRoots` and/or `repoPaths` updates into config.json. */
+export function saveWorkspaceConfig(
+  patch: { scanRoots?: string[]; repoPaths?: Record<string, string | null> },
+  configFile = CONFIG_FILE,
+): void {
+  const raw = readRawConfig(configFile);
+  if (patch.scanRoots !== undefined) {
+    const seen = new Set<string>();
+    const roots: string[] = [];
+    for (const r of patch.scanRoots) {
+      const normalized = contractHome(path.resolve(expandHome(r)));
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        roots.push(normalized);
+      }
+    }
+    raw.scanRoots = roots;
+  }
+  if (patch.repoPaths !== undefined) {
+    const existing =
+      raw.repoPaths && typeof raw.repoPaths === 'object' && !Array.isArray(raw.repoPaths)
+        ? { ...(raw.repoPaths as Record<string, string>) }
+        : {};
+    for (const [k, v] of Object.entries(patch.repoPaths)) {
+      const key = k.toLowerCase();
+      if (v === null) delete existing[key];
+      else existing[key] = contractHome(path.resolve(expandHome(v)));
+    }
+    raw.repoPaths = existing;
+  }
+  writeRawConfig(raw, configFile);
 }

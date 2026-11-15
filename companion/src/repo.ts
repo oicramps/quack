@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { setRepoPath, type Config } from './config.ts';
+import type { RepoOverrideCheck, RootCheck, WorkspacePrTarget, WorkspaceSaveRequest, WorkspaceStatus } from '@quack/shared';
+import { CONFIG_FILE, contractHome, expandHome } from './paths.ts';
+import { type Config, hasConfigFile, loadConfig, saveWorkspaceConfig, setRepoPath } from './config.ts';
 import { runGit } from './exec.ts';
 import { log } from './log.ts';
-import { contractHome, expandHome } from './paths.ts';
 
 /** Turns any GitHub remote URL (SSH, HTTPS, ssh://) into "owner/repo", lowercased. */
 export function parseGitHubRemote(url: string): string | null {
@@ -86,6 +87,28 @@ function candidateDirs(roots: string[]): { dirs: string[]; blockedRoots: string[
   return { dirs, blockedRoots: blocked };
 }
 
+function inspectRoot(root: string): { check: RootCheck; dirs: string[] } {
+  const display = contractHome(root);
+  try {
+    const stat = fs.statSync(root);
+    if (!stat.isDirectory()) return { check: { path: display, state: 'missing', repoCount: 0 }, dirs: [] };
+  } catch (err) {
+    return { check: { path: display, state: isPermissionError(err) ? 'blocked' : 'missing', repoCount: 0 }, dirs: [] };
+  }
+  const scan = candidateDirs([root]);
+  if (scan.blockedRoots.length > 0 && scan.dirs.length === 0) {
+    return { check: { path: display, state: 'blocked', repoCount: 0 }, dirs: [] };
+  }
+  return {
+    check: {
+      path: display,
+      state: scan.dirs.length > 0 ? 'ok' : 'empty',
+      repoCount: scan.dirs.length,
+    },
+    dirs: scan.dirs,
+  };
+}
+
 export interface CloneSearchResult {
   clone: string | null;
   blockedRoots: string[];
@@ -150,6 +173,166 @@ export async function findCloneWithDiagnostics(config: Config, owner: string, re
 /** Finds the local clone for owner/repo: config override first, then a scan of scanRoots. */
 export async function findClone(config: Config, owner: string, repo: string): Promise<string | null> {
   return (await findCloneWithDiagnostics(config, owner, repo)).clone;
+}
+
+/** Inspects configured scanRoots, repoPaths, git availability, and optional PR match without modifying config. */
+export async function inspectWorkspace(opts: { pr?: WorkspacePrTarget; configFile?: string } = {}): Promise<WorkspaceStatus> {
+  const configFile = opts.configFile ?? CONFIG_FILE;
+  const configured = hasConfigFile(configFile);
+  const config = loadConfig(configFile);
+  const gitRes = await runGit(['--version'], { timeoutMs: 5000 });
+  const gitAvailable = gitRes.code === 0;
+
+  const uniqueRepos = new Set<string>();
+  const roots: RootCheck[] = [];
+  for (const root of config.scanRoots) {
+    const { check, dirs } = inspectRoot(root);
+    roots.push(check);
+    for (const d of dirs) {
+      try {
+        uniqueRepos.add(fs.realpathSync(d));
+      } catch {
+        uniqueRepos.add(path.resolve(d));
+      }
+    }
+  }
+
+  const overrides: RepoOverrideCheck[] = [];
+  for (const [repoKey, override] of Object.entries(config.repoPaths)) {
+    const display = contractHome(override);
+    let readable = false;
+    try {
+      fs.statSync(override);
+      readable = true;
+    } catch (err) {
+      overrides.push({ repo: repoKey, path: display, state: isPermissionError(err) ? 'blocked' : 'missing' });
+    }
+    if (!readable) continue;
+    if (!isGitDir(override)) {
+      overrides.push({ repo: repoKey, path: display, state: 'not_git' });
+      continue;
+    }
+    const origin = await originOf(override);
+    if (origin && origin !== repoKey) {
+      overrides.push({ repo: repoKey, path: display, state: 'mismatch', detail: `Origin is ${origin}` });
+      continue;
+    }
+    overrides.push({ repo: repoKey, path: display, state: 'ok' });
+    try {
+      uniqueRepos.add(fs.realpathSync(override));
+    } catch {
+      uniqueRepos.add(path.resolve(override));
+    }
+  }
+
+  let prMatch: WorkspaceStatus['prMatch'];
+  if (opts.pr) {
+    const prKey = `${opts.pr.owner}/${opts.pr.repo}`.toLowerCase();
+    const { clone, blockedRoots, overrideIssue } = await findCloneWithDiagnostics(config, opts.pr.owner, opts.pr.repo);
+    const detail = clone
+      ? undefined
+      : overrideIssue
+        ? overrideIssue
+        : blockedRoots.length
+          ? `Permission blocked for ${blockedRoots.map(contractHome).join(', ')}`
+          : undefined;
+    prMatch = {
+      repo: prKey,
+      found: Boolean(clone),
+      ...(clone && { path: contractHome(clone) }),
+      ...(detail && { detail }),
+    };
+  }
+
+  return {
+    configured,
+    gitAvailable,
+    roots,
+    overrides,
+    totalRepos: uniqueRepos.size,
+    ...(prMatch && { prMatch }),
+  };
+}
+
+/** Updates workspace config (adding a root/clone, or replacing scanRoots/repoPaths) and re-tests it. */
+export async function saveWorkspace(
+  req: Pick<WorkspaceSaveRequest, 'scanRoots' | 'addPath' | 'repoPaths' | 'pr'>,
+  configFile = CONFIG_FILE,
+): Promise<{ workspace: WorkspaceStatus; error?: string; notice?: string }> {
+  cache.clear();
+  let notice: string | undefined;
+
+  if (req.scanRoots !== undefined || req.repoPaths !== undefined) {
+    saveWorkspaceConfig({ scanRoots: req.scanRoots, repoPaths: req.repoPaths }, configFile);
+  }
+
+  if (req.addPath !== undefined) {
+    const cleaned = req.addPath.trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+    if (!cleaned) {
+      return { workspace: await inspectWorkspace({ pr: req.pr, configFile }), error: 'Enter a folder path.' };
+    }
+    const abs = path.resolve(expandHome(cleaned));
+    const display = contractHome(abs);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(abs);
+    } catch (err) {
+      const error = isPermissionError(err)
+        ? `Your browser does not have permission to read "${display}". Allow it in System Settings → Privacy & Security → Files and Folders, restart the browser, and try again.`
+        : `Folder not found: ${display}`;
+      return { workspace: await inspectWorkspace({ pr: req.pr, configFile }), error };
+    }
+    if (!stat.isDirectory()) {
+      return { workspace: await inspectWorkspace({ pr: req.pr, configFile }), error: `"${display}" is not a directory.` };
+    }
+
+    const hadConfig = hasConfigFile(configFile);
+    const current = loadConfig(configFile);
+    const defaultActiveRoots = () =>
+      hadConfig ? undefined : current.scanRoots.filter((r) => inspectRoot(r).check.state === 'ok');
+
+    if (isGitDir(abs)) {
+      const origin = await originOf(abs);
+      if (req.pr) {
+        const prKey = `${req.pr.owner}/${req.pr.repo}`.toLowerCase();
+        if (origin && origin !== prKey) {
+          return {
+            workspace: await inspectWorkspace({ pr: req.pr, configFile }),
+            error: `"${display}" has origin "${origin}", not "${prKey}".`,
+          };
+        }
+        saveWorkspaceConfig({ scanRoots: defaultActiveRoots(), repoPaths: { [prKey]: abs } }, configFile);
+        notice = `Linked ${prKey} → ${display}`;
+      } else if (origin) {
+        saveWorkspaceConfig({ scanRoots: defaultActiveRoots(), repoPaths: { [origin]: abs } }, configFile);
+        notice = `Linked ${origin} → ${display}`;
+      } else {
+        return {
+          workspace: await inspectWorkspace({ pr: req.pr, configFile }),
+          error: `"${display}" doesn’t have a github.com origin. Open a PR for it first, or run: ~/.quack/bin/quack-companion link "${display}" owner/repo`,
+        };
+      }
+    } else {
+      const probed = inspectRoot(abs);
+      if (probed.check.state === 'blocked') {
+        return {
+          workspace: await inspectWorkspace({ pr: req.pr, configFile }),
+          error: `Your browser does not have permission to read "${display}". Allow it in System Settings → Privacy & Security → Files and Folders, restart the browser, and try again.`,
+        };
+      }
+      const baseRoots = hadConfig ? current.scanRoots : defaultActiveRoots()!;
+      saveWorkspaceConfig({ scanRoots: [...baseRoots, abs] }, configFile);
+      notice =
+        probed.check.repoCount > 0
+          ? `Added ${display} (${probed.check.repoCount} ${probed.check.repoCount === 1 ? 'repo' : 'repos'} found)`
+          : `Saved ${display}, but 0 git repositories were found inside (searched 2 levels deep).`;
+    }
+  }
+
+  return {
+    workspace: await inspectWorkspace({ pr: req.pr, configFile }),
+    ...(notice && { notice }),
+  };
 }
 
 /** Links a local git clone to `"owner/repo"` in config.json (auto-detecting `origin` when omitted). */

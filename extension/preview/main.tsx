@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import type { AgentEvent, AgentStatus, CompanionMessage, ExtensionMessage, ProgressStep } from '@quack/shared';
+import type { AgentEvent, AgentStatus, CompanionMessage, ExtensionMessage, ProgressStep, WorkspaceStatus } from '@quack/shared';
 import { PROTOCOL_VERSION, QUACK_VERSION } from '@quack/shared';
 import '../components/panel.css';
 import { Panel } from '../components/Panel';
@@ -165,6 +165,47 @@ for (const s of AFTER_DONE) scripts[s] = scripts.done;
 
 class FakeClient {
   private disconnect = new Set<(error: string, ids: string[]) => void>();
+  private workspace: WorkspaceStatus =
+    scenario === 'no-pr-setup'
+      ? {
+          configured: false,
+          gitAvailable: true,
+          roots: [
+            { path: '~/Projects', state: 'ok', repoCount: 4 },
+            { path: '~/Developer', state: 'empty', repoCount: 0 },
+          ],
+          overrides: [],
+          totalRepos: 4,
+        }
+      : scenario === 'no-pr-blocked'
+        ? {
+            configured: true,
+            gitAvailable: true,
+            roots: [
+              { path: '~/Documents/Dev/Projects', state: 'blocked', repoCount: 0 },
+              { path: '~/Projects', state: 'missing', repoCount: 0 },
+            ],
+            overrides: [],
+            totalRepos: 0,
+          }
+        : scenario === 'pr-no-clone'
+          ? {
+              configured: true,
+              gitAvailable: true,
+              roots: [{ path: '~/Projects', state: 'ok', repoCount: 2 }],
+              overrides: [],
+              totalRepos: 2,
+              prMatch: { repo: 'projetoparcas/mynah', found: false },
+            }
+          : {
+              configured: true,
+              gitAvailable: true,
+              roots: [{ path: '~/Projects', state: 'ok', repoCount: 6 }],
+              overrides: [],
+              totalRepos: 6,
+              prMatch: { repo: 'projetoparcas/mynah', found: true, path: '~/Projects/mynah' },
+            };
+
   send(message: ExtensionMessage, listener?: (m: CompanionMessage) => void) {
     if (scenario === 'offline' || scenario === 'no-pr-offline') {
       setTimeout(() => this.disconnect.forEach((l) => l('Specified native messaging host not found.', [message.requestId])), 10);
@@ -177,12 +218,35 @@ class FakeClient {
           requestId: message.requestId,
           version: scenario === 'outdated' ? '0.1.0' : QUACK_VERSION,
           protocol: PROTOCOL_VERSION,
+          capabilities: { workspace: true },
           agents: list,
           pending,
         });
       setTimeout(() => reply([], ['cursor', 'claude-code']), 10);
       // "loading" stays on the companion's first, partial answer.
       if (scenario !== 'loading') setTimeout(() => reply(agents, []), 20);
+    } else if (message.type === 'workspace_check') {
+      setTimeout(() => listener?.({ type: 'workspace', requestId: message.requestId, workspace: this.workspace }), 25);
+    } else if (message.type === 'workspace_save') {
+      if (message.scanRoots) {
+        this.workspace = {
+          ...this.workspace,
+          configured: true,
+          roots: message.scanRoots.map((p) => ({ path: p, state: 'ok', repoCount: 4 })),
+          totalRepos: message.scanRoots.length * 4,
+          ...(message.pr && { prMatch: { repo: `${message.pr.owner}/${message.pr.repo}`.toLowerCase(), found: true, path: `${message.scanRoots[0]}/${message.pr.repo}` } }),
+        };
+      } else if (message.addPath) {
+        const added = message.addPath.trim();
+        this.workspace = {
+          ...this.workspace,
+          configured: true,
+          roots: [...this.workspace.roots, { path: added, state: 'ok', repoCount: 3 }],
+          totalRepos: this.workspace.totalRepos + 3,
+          ...(message.pr && { prMatch: { repo: `${message.pr.owner}/${message.pr.repo}`.toLowerCase(), found: true, path: added } }),
+        };
+      }
+      setTimeout(() => listener?.({ type: 'workspace', requestId: message.requestId, workspace: this.workspace, notice: 'Workspace updated and tested.' }), 25);
     } else if (message.type === 'checks') {
       const show = scenario === 'empty-ci' || scenario === 'explain-ci';
       listener?.({ type: 'checks', requestId: message.requestId, available: true, failing: show ? FAILING_CHECKS : [] });
@@ -214,11 +278,11 @@ seedStorage({
 });
 
 const selection = { path: 'mobile/plugins/withReleaseOptimizations.js', startLine: 15, endLine: 30, side: 'new' as const };
-const noSelection = ['empty', 'empty-ci', 'explain-ci', 'loading'].includes(scenario);
+const noSelection = ['empty', 'empty-ci', 'explain-ci', 'loading', 'pr-no-clone'].includes(scenario);
 const page: PanelPage = {
   tabId: 1,
   pr:
-    scenario === 'no-pr' || scenario === 'no-pr-offline'
+    scenario === 'no-pr' || scenario === 'no-pr-offline' || scenario === 'no-pr-setup' || scenario === 'no-pr-blocked'
       ? null
       : {
           owner: 'ProjetoParcas',

@@ -7,8 +7,9 @@ import { MessageDecoder, encodeMessage } from '../src/framing.ts';
 import { isAllowedOrigin } from '../src/host.ts';
 import { install, nativeMessagingHostDirs, selectInstallHostDirs, uninstall } from '../src/install.ts';
 import { buildCiPrompt, buildFollowUp, buildPrompt } from '../src/prompt.ts';
+import { hasConfigFile } from '../src/config.ts';
 import { contractHome } from '../src/paths.ts';
-import { findCloneWithDiagnostics, linkClone, parseGitHubRemote } from '../src/repo.ts';
+import { findCloneWithDiagnostics, inspectWorkspace, linkClone, parseGitHubRemote, saveWorkspace } from '../src/repo.ts';
 import { fileAnchor } from '../src/selection.ts';
 import { ciCommentText, isOlderVersion, parseCiReport } from '@quack/shared';
 import { claudeGuardArgs } from '../src/adapters/claude.ts';
@@ -192,6 +193,51 @@ test('findCloneWithDiagnostics follows symlinks, trusts SSH-alias repoPaths, and
     assert.equal(saved.repoPaths['polarsteps/alias-repo'], contractHome(path.resolve(aliasRepo)));
   } finally {
     fs.chmodSync(blocked, 0o755);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('inspectWorkspace and saveWorkspace report status, add folders or clones, and validate inputs', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'quack-ws-test-'));
+  const cfgFile = path.join(root, 'config.json');
+  const codeDir = path.join(root, 'work');
+  const repoA = path.join(codeDir, 'igloo');
+  const singleAlias = path.join(root, 'elsewhere', 'special');
+  try {
+    makeGitStub(repoA, 'git@github.com:polarsteps/igloo.git');
+    makeGitStub(singleAlias, 'git@github-work:polarsteps/special.git');
+
+    assert.equal(hasConfigFile(cfgFile), false);
+    const before = await inspectWorkspace({ configFile: cfgFile });
+    assert.equal(before.configured, false);
+    assert.equal(before.gitAvailable, true);
+
+    // Adding a missing path returns an error without creating a broken config.
+    const missing = await saveWorkspace({ addPath: path.join(root, 'nope') }, cfgFile);
+    assert.match(missing.error ?? '', /Folder not found/);
+
+    // Adding a parent folder saves scanRoots and tests it.
+    const addedFolder = await saveWorkspace({ addPath: codeDir, pr: { owner: 'polarsteps', repo: 'igloo' } }, cfgFile);
+    assert.equal(addedFolder.error, undefined);
+    assert.equal(addedFolder.workspace.configured, true);
+    assert.ok(addedFolder.workspace.roots.some((r) => r.path === contractHome(codeDir) && r.state === 'ok' && r.repoCount === 1));
+    assert.equal(addedFolder.workspace.prMatch?.found, true);
+
+    // Adding an individual clone with an SSH host alias under PR context links repoPaths.
+    const addedClone = await saveWorkspace({ addPath: singleAlias, pr: { owner: 'polarsteps', repo: 'special' } }, cfgFile);
+    assert.equal(addedClone.error, undefined);
+    assert.match(addedClone.notice ?? '', /Linked polarsteps\/special/);
+    assert.equal(addedClone.workspace.prMatch?.found, true);
+    assert.equal(addedClone.workspace.overrides.find((o) => o.repo === 'polarsteps/special')?.state, 'ok');
+
+    // Validation checks for workspace_check and workspace_save.
+    const wc = validateMessage({ type: 'workspace_check', requestId: 'w1', pr: { owner: 'polarsteps', repo: 'igloo' } });
+    assert.equal(wc.type, 'workspace_check');
+    const ws = validateMessage({ type: 'workspace_save', requestId: 'w2', addPath: '~/work', repoPaths: { 'polarsteps/special': null } });
+    assert.equal(ws.type, 'workspace_save');
+    assert.throws(() => validateMessage({ type: 'workspace_check', requestId: 'w1', pr: { owner: '../bad', repo: 'x' } }), ValidationError);
+    assert.throws(() => validateMessage({ type: 'workspace_save', requestId: 'w2', scanRoots: [''] }), ValidationError);
+  } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
