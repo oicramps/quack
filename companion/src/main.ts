@@ -3,7 +3,7 @@ import { adapters } from './adapters/index.ts';
 import { loadConfig } from './config.ts';
 import { startHost } from './host.ts';
 import { install, uninstall } from './install.ts';
-import { findClone } from './repo.ts';
+import { findClone, linkClone } from './repo.ts';
 import { pruneAll } from './worktree.ts';
 
 const [arg] = process.argv.slice(2);
@@ -21,6 +21,13 @@ async function main(): Promise<void> {
     case 'uninstall':
       uninstall();
       break;
+    case 'link': {
+      const target = process.argv[3] ?? '.';
+      const ownerRepo = process.argv[4];
+      const linked = await linkClone(target, ownerRepo);
+      console.log(`Linked ${linked.key} -> ${linked.path} in ~/.quack/config.json`);
+      break;
+    }
     case 'prune': {
       const config = loadConfig();
       const removed = await pruneAll(config, (owner, repo) => findClone(config, owner, repo));
@@ -39,11 +46,12 @@ async function main(): Promise<void> {
       console.log(`quack-companion ${QUACK_VERSION}
 
 Usage:
-  quack-companion install [--dev]   Register the native messaging host for Chrome, Edge, Brave, and Chromium
-                                --dev also allows the unpacked extension id
-  quack-companion uninstall   Remove the host registration
-  quack-companion prune       Remove all Quack worktrees and their refs/pr-review refs
-  quack-companion doctor      Print config and agent readiness
+  quack-companion install [--dev]            Register the native messaging host for Chrome, Edge, Brave, and Chromium
+                                             --dev also allows the unpacked extension id
+  quack-companion uninstall                  Remove the host registration
+  quack-companion link [path] [owner/repo]   Map an existing local clone in ~/.quack/config.json
+  quack-companion prune                      Remove all Quack worktrees and their refs/pr-review refs
+  quack-companion doctor                     Print config and agent readiness
 
 The browser starts the companion itself; you never need to run it in a terminal.`);
   }

@@ -6,7 +6,8 @@ import { loadConfig } from './config.ts';
 import { log } from './log.ts';
 import { buildCiPrompt, buildFollowUp, buildPrompt } from './prompt.ts';
 import { type PrContext, prDiff, resolvePr } from './pr.ts';
-import { findClone } from './repo.ts';
+import { contractHome } from './paths.ts';
+import { findCloneWithDiagnostics } from './repo.ts';
 import { resolveSelections } from './selection.ts';
 import { acquireLock, changedFiles, discardWorktreeChanges, prepareWorktree, worktreePath } from './worktree.ts';
 
@@ -52,12 +53,33 @@ export async function handleAsk(req: AskRequest, send: Send, signal: AbortSignal
 
     progress('finding_repo');
     const statusPromise = getStatus(req.agent);
-    const clone = await findClone(config, pr.owner, pr.repo);
+    const { clone, blockedRoots, overrideIssue } = await findCloneWithDiagnostics(config, pr.owner, pr.repo);
     if (!clone) {
-      throw new AskError('repo_not_found', `No local clone of ${pr.owner}/${pr.repo} was found.`, [
-        { text: `Clone it under one of: ${config.scanRoots.join(', ')}`, command: `git clone git@github.com:${pr.owner}/${pr.repo}.git` },
-        { text: `Or map it in ~/.quack/config.json under "repoPaths": { "${pr.owner}/${pr.repo}": "/path/to/clone" }` },
-      ]);
+      const blocked = blockedRoots.map(contractHome);
+      const message = overrideIssue
+        ? overrideIssue
+        : blocked.length
+          ? `Could not find ${pr.owner}/${pr.repo}. Your browser does not have permission to read ${blocked.join(', ')}.`
+          : `Could not find a local clone of ${pr.owner}/${pr.repo} in your scanned folders.`;
+      const steps: FixStep[] = [];
+      if (blocked.length) {
+        steps.push({
+          text: `Allow your browser to read ${blocked.join(', ')} in System Settings → Privacy & Security → Files and Folders, restart the browser, then click Retry.`,
+        });
+      }
+      const cloneRoot =
+        config.scanRoots.map(contractHome).find((r) => !r.startsWith('~/Documents') && !blocked.includes(r)) ?? '~/Projects';
+      steps.push(
+        {
+          text: 'Already cloned elsewhere? Run this with your clone’s path (or set "repoPaths" in ~/.quack/config.json), then click Retry:',
+          command: `~/.quack/bin/quack-companion link /path/to/${pr.repo} ${pr.owner}/${pr.repo}`,
+        },
+        {
+          text: `Not cloned yet? Clone it into ${cloneRoot} (or any folder in "scanRoots" in ~/.quack/config.json):`,
+          command: `git clone git@github.com:${pr.owner}/${pr.repo}.git ${cloneRoot}/${pr.repo}`,
+        },
+      );
+      throw new AskError('repo_not_found', message, steps);
     }
 
     const status = await statusPromise;

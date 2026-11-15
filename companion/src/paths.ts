@@ -24,3 +24,8 @@ export const EXTRA_BIN_DIRS = [
 export function expandHome(p: string): string {
   return p === '~' || p.startsWith('~/') ? path.join(HOME, p.slice(1)) : p;
 }
+
+export function contractHome(p: string): string {
+  if (p === HOME) return '~';
+  return p.startsWith(`${HOME}${path.sep}`) ? `~${p.slice(HOME.length)}` : p;
+}

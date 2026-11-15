@@ -66,6 +66,7 @@ Run via `npx quack-companion` or directly via `~/.quack/bin/quack-companion`:
 | Command | Description |
 | --- | --- |
 | `npx quack-companion@latest install` | Install or update the companion and register browser manifests |
+| `npx quack-companion link [path] [owner/repo]` | Map an existing local clone in `~/.quack/config.json` |
 | `npx quack-companion doctor` | Check config, scan roots, and local AI agent readiness |
 | `npx quack-companion prune` | Delete all cached PR worktrees and `refs/pr-review/*` refs |
 | `npx quack-companion uninstall` | Remove browser registrations and `~/.quack/bin` |
@@ -83,9 +84,15 @@ Created automatically on first run at `~/.quack/config.json`:
     "~/Documents/Dev/Projects",
     "~/Projects",
     "~/Developer",
+    "~/Development",
+    "~/Dev",
     "~/repos",
     "~/src",
-    "~/code"
+    "~/code",
+    "~/workspace",
+    "~/work",
+    "~/GitHub",
+    "~/git"
   ],
   "repoPaths": {
     "owner/repo": "/custom/path/to/clone"

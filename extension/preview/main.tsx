@@ -125,6 +125,30 @@ const scripts: Record<string, Script> = {
     ...TOOLS.slice(0, 2),
     event({ type: 'error', code: 'timeout', message: 'No response for 5 min while reading the repo. The worktree is fine; retrying usually works.' }, 1700),
   ],
+  'repo-not-found': [
+    progress('finding_repo', 10),
+    event(
+      {
+        type: 'error',
+        code: 'repo_not_found',
+        message: 'Could not find ProjetoParcas/mynah. Your browser does not have permission to read ~/Documents/Dev/Projects.',
+        fixSteps: [
+          {
+            text: 'Allow your browser to read ~/Documents/Dev/Projects in System Settings → Privacy & Security → Files and Folders, restart the browser, then click Retry.',
+          },
+          {
+            text: 'Already cloned elsewhere? Run this with your clone’s path (or set "repoPaths" in ~/.quack/config.json), then click Retry:',
+            command: '~/.quack/bin/quack-companion link /path/to/mynah ProjetoParcas/mynah',
+          },
+          {
+            text: 'Not cloned yet? Clone it into ~/Projects (or any folder in "scanRoots" in ~/.quack/config.json):',
+            command: 'git clone git@github.com:ProjetoParcas/mynah.git ~/Projects/mynah',
+          },
+        ],
+      },
+      60,
+    ),
+  ],
   'explain-ci': [
     ...CI_PREP,
     progress('thinking', 1100),

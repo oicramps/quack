@@ -1432,35 +1432,37 @@ const TurnView = memo(function TurnView({
 
           {error && !cancelled && (
             <div className="error-card" role="alert">
-              <DuckError width={64} />
-              <div className="error-content">
-                <strong className="error-title">{errorTitle(error.code, label, Math.round(elapsedMs / 1000))}</strong>
-                <p className="muted small">{error.message}</p>
-                {error.fixSteps && error.fixSteps.length > 0 && <FixSteps steps={error.fixSteps} />}
-                <div className="row">
-                  {(error.code === 'agent_not_installed' || error.code === 'agent_not_logged_in') && (
-                    <button type="button" className="secondary" onClick={onRecheck}>
-                      Re-check
-                    </button>
-                  )}
-                  <button type="button" className="primary" onClick={onRetry}>
-                    Retry
-                  </button>
-                  {otherAgent && (
-                    <button type="button" className="secondary" onClick={() => onRetryOther(otherAgent.id)}>
-                      Try {otherAgent.label}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() =>
-                      navigator.clipboard.writeText(`${error.code}: ${error.message}${sha ? ` (worktree ${sha})` : ''}`)
-                    }
-                  >
-                    Copy log
-                  </button>
+              <div className="error-head">
+                <DuckError width={52} />
+                <div className="error-summary">
+                  <strong className="error-title">{errorTitle(error.code, label, Math.round(elapsedMs / 1000))}</strong>
+                  <p className="muted small">{error.message}</p>
                 </div>
+              </div>
+              {error.fixSteps && error.fixSteps.length > 0 && <FixSteps steps={error.fixSteps} />}
+              <div className="row">
+                {(error.code === 'agent_not_installed' || error.code === 'agent_not_logged_in') && (
+                  <button type="button" className="secondary" onClick={onRecheck}>
+                    Re-check
+                  </button>
+                )}
+                <button type="button" className="primary" onClick={onRetry}>
+                  Retry
+                </button>
+                {otherAgent && error.code !== 'repo_not_found' && (
+                  <button type="button" className="secondary" onClick={() => onRetryOther(otherAgent.id)}>
+                    Try {otherAgent.label}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() =>
+                    navigator.clipboard.writeText(`${error.code}: ${error.message}${sha ? ` (worktree ${sha})` : ''}`)
+                  }
+                >
+                  Copy log
+                </button>
               </div>
             </div>
           )}
