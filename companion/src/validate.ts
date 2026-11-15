@@ -1,4 +1,4 @@
-import type { AskRequest, AgentId, CodeSelection, ExtensionMessage, HistoryTurn, PrRef } from '@quack/shared';
+import type { AskRequest, AgentId, CodeSelection, ExtensionMessage, HistoryTurn, PrRef, WorkspacePrTarget } from '@quack/shared';
 
 const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const REPO = /^[A-Za-z0-9._-]{1,100}$/;
@@ -32,6 +32,28 @@ export function isSafeRepoPath(p: string): boolean {
 /** Validates a git branch name against ref traversal (`..`, `.lock`) and CLI flag injection (`-`). */
 export function isSafeBranch(name: string): boolean {
   return BRANCH.test(name) && !name.includes('..') && !name.startsWith('-') && !name.startsWith('/') && !name.endsWith('/') && !name.endsWith('.lock');
+}
+
+function validateWorkspacePr(pr: unknown): WorkspacePrTarget {
+  const p = pr as Partial<WorkspacePrTarget> | null;
+  if (!p || typeof p !== 'object') fail('pr is required');
+  if (typeof p.owner !== 'string' || !OWNER.test(p.owner)) fail('invalid owner');
+  if (typeof p.repo !== 'string' || !REPO.test(p.repo) || p.repo === '.' || p.repo === '..') fail('invalid repo');
+  return { owner: p.owner, repo: p.repo };
+}
+
+function validateConfigPath(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length > 500 || value.includes('\0') || !value.trim()) fail(`invalid ${label}`);
+  return value;
+}
+
+function validateOwnerRepoKey(key: string): string {
+  const slash = key.indexOf('/');
+  if (slash <= 0) fail('invalid repo key');
+  const owner = key.slice(0, slash);
+  const repo = key.slice(slash + 1);
+  if (!OWNER.test(owner) || !REPO.test(repo) || repo === '.' || repo === '..') fail('invalid repo key');
+  return `${owner}/${repo}`.toLowerCase();
 }
 
 function validatePr(pr: unknown): PrRef {
@@ -133,6 +155,39 @@ export function validateMessage(raw: unknown): ExtensionMessage {
     case 'checks': {
       const c = raw as { pr?: unknown };
       return { type: 'checks', requestId: m.requestId, pr: validatePr(c.pr) };
+    }
+    case 'workspace_check': {
+      const w = raw as { pr?: unknown };
+      return {
+        type: 'workspace_check',
+        requestId: m.requestId,
+        ...(w.pr !== undefined && { pr: validateWorkspacePr(w.pr) }),
+      };
+    }
+    case 'workspace_save': {
+      const w = raw as { scanRoots?: unknown; addPath?: unknown; repoPaths?: unknown; pr?: unknown };
+      const out: Extract<ExtensionMessage, { type: 'workspace_save' }> = {
+        type: 'workspace_save',
+        requestId: m.requestId,
+      };
+      if (w.scanRoots !== undefined) {
+        if (!Array.isArray(w.scanRoots) || w.scanRoots.length > 50) fail('invalid scanRoots');
+        out.scanRoots = w.scanRoots.map((r) => validateConfigPath(r, 'scanRoot'));
+      }
+      if (w.addPath !== undefined) {
+        if (typeof w.addPath !== 'string' || w.addPath.length > 500 || w.addPath.includes('\0')) fail('invalid addPath');
+        out.addPath = w.addPath;
+      }
+      if (w.repoPaths !== undefined) {
+        if (!w.repoPaths || typeof w.repoPaths !== 'object' || Array.isArray(w.repoPaths)) fail('invalid repoPaths');
+        const entries = Object.entries(w.repoPaths as Record<string, unknown>);
+        if (entries.length > 200) fail('too many repoPaths');
+        out.repoPaths = Object.fromEntries(
+          entries.map(([k, v]) => [validateOwnerRepoKey(k), v === null ? null : validateConfigPath(v, 'repoPath')]),
+        );
+      }
+      if (w.pr !== undefined) out.pr = validateWorkspacePr(w.pr);
+      return out;
     }
     default:
       fail('unknown message type');

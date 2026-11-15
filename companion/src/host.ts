@@ -4,6 +4,7 @@ import { adapters } from './adapters/index.ts';
 import { listFailingChecks } from './checks.ts';
 import { MessageDecoder, encodeMessage } from './framing.ts';
 import { log } from './log.ts';
+import { inspectWorkspace, saveWorkspace } from './repo.ts';
 import { handleAsk } from './session.ts';
 import { ValidationError, validateMessage } from './validate.ts';
 
@@ -73,6 +74,7 @@ export function startHost(origin: string | undefined): void {
             requestId: message.requestId,
             version: QUACK_VERSION,
             protocol: PROTOCOL_VERSION,
+            capabilities: { workspace: true },
             agents: ids.flatMap((id) => done.get(id) ?? []),
             pending: ids.filter((id) => !done.has(id)),
           });
@@ -97,6 +99,32 @@ export function startHost(origin: string | undefined): void {
           .catch((err) => {
             log('checks failed', String(err));
             send({ type: 'checks', requestId: message.requestId, failing: [], available: false });
+          });
+        break;
+      case 'workspace_check':
+        inspectWorkspace({ pr: message.pr })
+          .then((workspace) => send({ type: 'workspace', requestId: message.requestId, workspace }))
+          .catch((err) => {
+            log('workspace check failed', String(err));
+            send({
+              type: 'workspace',
+              requestId: message.requestId,
+              workspace: { configured: false, gitAvailable: false, roots: [], overrides: [], totalRepos: 0 },
+              error: (err as Error).message,
+            });
+          });
+        break;
+      case 'workspace_save':
+        saveWorkspace(message)
+          .then((result) => send({ type: 'workspace', requestId: message.requestId, ...result }))
+          .catch((err) => {
+            log('workspace save failed', String(err));
+            send({
+              type: 'workspace',
+              requestId: message.requestId,
+              workspace: { configured: false, gitAvailable: false, roots: [], overrides: [], totalRepos: 0 },
+              error: (err as Error).message,
+            });
           });
         break;
       case 'ask': {

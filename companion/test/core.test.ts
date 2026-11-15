@@ -7,7 +7,9 @@ import { MessageDecoder, encodeMessage } from '../src/framing.ts';
 import { isAllowedOrigin } from '../src/host.ts';
 import { install, nativeMessagingHostDirs, selectInstallHostDirs, uninstall } from '../src/install.ts';
 import { buildCiPrompt, buildFollowUp, buildPrompt } from '../src/prompt.ts';
-import { parseGitHubRemote } from '../src/repo.ts';
+import { hasConfigFile } from '../src/config.ts';
+import { contractHome } from '../src/paths.ts';
+import { findCloneWithDiagnostics, inspectWorkspace, linkClone, parseGitHubRemote, saveWorkspace } from '../src/repo.ts';
 import { fileAnchor } from '../src/selection.ts';
 import { ciCommentText, isOlderVersion, parseCiReport } from '@quack/shared';
 import { claudeGuardArgs } from '../src/adapters/claude.ts';
@@ -127,10 +129,117 @@ test('GitHub remotes in every form map to owner/repo', () => {
     'https://github.com/ProjetoParcas/mynah',
     'https://user@github.com/ProjetoParcas/mynah.git',
     'ssh://git@github.com/ProjetoParcas/mynah.git',
+    'ssh://git@ssh.github.com:443/ProjetoParcas/mynah.git',
   ]) {
     assert.equal(parseGitHubRemote(url), 'projetoparcas/mynah', url);
   }
   assert.equal(parseGitHubRemote('git@gitlab.com:a/b.git'), null);
+});
+
+function makeGitStub(dir: string, originUrl: string): void {
+  fs.mkdirSync(path.join(dir, '.git', 'objects'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.git', 'refs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+  fs.writeFileSync(path.join(dir, '.git', 'config'), `[core]\n\trepositoryformatversion = 0\n[remote "origin"]\n\turl = ${originUrl}\n`);
+}
+
+test('findCloneWithDiagnostics follows symlinks, trusts SSH-alias repoPaths, and reports permission-blocked scan roots', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'quack-repo-test-'));
+  const blocked = path.join(root, 'blocked');
+  const scan = path.join(root, 'scan');
+  const realRepo = path.join(root, 'real-clone');
+  const linked = path.join(scan, 'symlinked-clone');
+  const aliasRepo = path.join(root, 'alias-clone');
+  const wrongRepo = path.join(root, 'wrong-clone');
+  const cfgFile = path.join(root, 'config.json');
+  try {
+    fs.mkdirSync(blocked);
+    fs.mkdirSync(scan);
+    makeGitStub(realRepo, 'git@github.com:Polarsteps/igloo.git');
+    fs.symlinkSync(realRepo, linked);
+    makeGitStub(aliasRepo, 'git@github-work:polarsteps/alias-repo.git');
+    makeGitStub(wrongRepo, 'git@github.com:someone/else.git');
+    fs.chmodSync(blocked, 0o000);
+
+    const baseCfg = { scanRoots: [blocked, scan], repoPaths: {}, worktreeRoot: path.join(root, 'wt'), retentionDays: 7, maxWorktrees: 20 };
+
+    // Follows symlink under scanRoots.
+    const viaSymlink = await findCloneWithDiagnostics(baseCfg, 'polarsteps', 'igloo');
+    assert.equal(viaSymlink.clone, linked);
+
+    // Reports permission-blocked scan root when clone is missing (skip chmod assertion if running as root).
+    const missing = await findCloneWithDiagnostics(baseCfg, 'polarsteps', 'nonexistent');
+    assert.equal(missing.clone, null);
+    if (process.getuid?.() !== 0) {
+      assert.deepEqual(missing.blockedRoots, [blocked]);
+    }
+
+    // Accepts explicit repoPaths with a custom SSH host alias.
+    const viaAlias = await findCloneWithDiagnostics({ ...baseCfg, repoPaths: { 'polarsteps/alias-repo': aliasRepo } }, 'polarsteps', 'alias-repo');
+    assert.equal(viaAlias.clone, aliasRepo);
+
+    // Rejects repoPaths pointing to a different GitHub repo with a clear overrideIssue.
+    const mismatch = await findCloneWithDiagnostics({ ...baseCfg, repoPaths: { 'polarsteps/target': wrongRepo } }, 'polarsteps', 'target');
+    assert.equal(mismatch.clone, null);
+    assert.match(mismatch.overrideIssue ?? '', /someone\/else/);
+
+    // linkClone writes auto-detected origin and explicit owner/repo into config.json.
+    const autoLinked = await linkClone(realRepo, undefined, cfgFile);
+    assert.equal(autoLinked.key, 'polarsteps/igloo');
+    const explicitLinked = await linkClone(aliasRepo, 'Polarsteps/Alias-Repo', cfgFile);
+    assert.equal(explicitLinked.key, 'polarsteps/alias-repo');
+    const saved = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+    assert.equal(saved.repoPaths['polarsteps/igloo'], contractHome(path.resolve(realRepo)));
+    assert.equal(saved.repoPaths['polarsteps/alias-repo'], contractHome(path.resolve(aliasRepo)));
+  } finally {
+    fs.chmodSync(blocked, 0o755);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('inspectWorkspace and saveWorkspace report status, add folders or clones, and validate inputs', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'quack-ws-test-'));
+  const cfgFile = path.join(root, 'config.json');
+  const codeDir = path.join(root, 'work');
+  const repoA = path.join(codeDir, 'igloo');
+  const singleAlias = path.join(root, 'elsewhere', 'special');
+  try {
+    makeGitStub(repoA, 'git@github.com:polarsteps/igloo.git');
+    makeGitStub(singleAlias, 'git@github-work:polarsteps/special.git');
+
+    assert.equal(hasConfigFile(cfgFile), false);
+    const before = await inspectWorkspace({ configFile: cfgFile });
+    assert.equal(before.configured, false);
+    assert.equal(before.gitAvailable, true);
+
+    // Adding a missing path returns an error without creating a broken config.
+    const missing = await saveWorkspace({ addPath: path.join(root, 'nope') }, cfgFile);
+    assert.match(missing.error ?? '', /Folder not found/);
+
+    // Adding a parent folder saves scanRoots and tests it.
+    const addedFolder = await saveWorkspace({ addPath: codeDir, pr: { owner: 'polarsteps', repo: 'igloo' } }, cfgFile);
+    assert.equal(addedFolder.error, undefined);
+    assert.equal(addedFolder.workspace.configured, true);
+    assert.ok(addedFolder.workspace.roots.some((r) => r.path === contractHome(codeDir) && r.state === 'ok' && r.repoCount === 1));
+    assert.equal(addedFolder.workspace.prMatch?.found, true);
+
+    // Adding an individual clone with an SSH host alias under PR context links repoPaths.
+    const addedClone = await saveWorkspace({ addPath: singleAlias, pr: { owner: 'polarsteps', repo: 'special' } }, cfgFile);
+    assert.equal(addedClone.error, undefined);
+    assert.match(addedClone.notice ?? '', /Linked polarsteps\/special/);
+    assert.equal(addedClone.workspace.prMatch?.found, true);
+    assert.equal(addedClone.workspace.overrides.find((o) => o.repo === 'polarsteps/special')?.state, 'ok');
+
+    // Validation checks for workspace_check and workspace_save.
+    const wc = validateMessage({ type: 'workspace_check', requestId: 'w1', pr: { owner: 'polarsteps', repo: 'igloo' } });
+    assert.equal(wc.type, 'workspace_check');
+    const ws = validateMessage({ type: 'workspace_save', requestId: 'w2', addPath: '~/work', repoPaths: { 'polarsteps/special': null } });
+    assert.equal(ws.type, 'workspace_save');
+    assert.throws(() => validateMessage({ type: 'workspace_check', requestId: 'w1', pr: { owner: '../bad', repo: 'x' } }), ValidationError);
+    assert.throws(() => validateMessage({ type: 'workspace_save', requestId: 'w2', scanRoots: [''] }), ValidationError);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 const ask = (overrides: Record<string, unknown> = {}, pr: Record<string, unknown> = {}) => ({

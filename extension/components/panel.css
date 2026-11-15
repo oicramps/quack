@@ -1113,6 +1113,137 @@ a.button {
 .setup-card .setup-icon {
   background: var(--quack-bg);
 }
+.workspace-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.workspace-card.ok {
+  padding: 10px 12px;
+  border: 1px solid var(--quack-border);
+  border-radius: 8px;
+  background: var(--quack-surface);
+}
+.workspace-card:not(.setup-card):not(.ok) {
+  padding: 12px 14px;
+  border: 1px solid var(--quack-border);
+  border-radius: 8px;
+  background: var(--quack-surface);
+}
+.workspace-card:not(.setup-card):not(.ok) .setup-icon {
+  background: var(--quack-bg);
+}
+.workspace-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.workspace-summary-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.workspace-summary-text strong {
+  font-size: 13px;
+}
+.workspace-summary-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.workspace-actions button {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.workspace-head-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.workspace-head-text h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.workspace-head-text p {
+  font-size: 13px;
+}
+.workspace-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workspace-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--quack-bg);
+  border: 1px solid var(--quack-border-soft);
+  font-size: 12px;
+}
+.workspace-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--quack-border);
+  color: var(--quack-text-muted);
+}
+.workspace-badge.ok {
+  color: var(--quack-success);
+  background: var(--quack-success-bg);
+  border-color: transparent;
+}
+.workspace-badge.blocked {
+  color: var(--quack-danger);
+  background: var(--quack-danger-bg);
+  border-color: var(--quack-danger-border);
+}
+.workspace-form {
+  display: flex;
+  gap: 6px;
+}
+.workspace-form input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.workspace-msg {
+  font-size: 12px;
+}
+.workspace-msg.err {
+  color: var(--quack-danger);
+}
+.workspace-msg.ok {
+  color: var(--quack-success);
+}
+.workspace-clone-hint {
+  display: flex;
+  flex-direction: column;
+}
+.setup-card .command {
+  background: var(--quack-bg);
+}
 .offline h2 {
   font-size: 22px;
   line-height: 28px;
@@ -1131,6 +1262,9 @@ a.button {
   flex-direction: column;
   gap: 8px;
   font-size: 13px;
+}
+.fix-steps li {
+  overflow-wrap: anywhere;
 }
 .command {
   display: flex;
@@ -1558,24 +1692,30 @@ body[data-theme='dark'] .quack {
 
 .error-card {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px 12px 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 14px;
   border: 1px solid var(--quack-danger-border);
   border-radius: 10px;
   background: var(--quack-danger-bg);
 }
-.error-content {
+.error-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.error-summary {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 .error-title {
   font-weight: 600;
 }
-.error-content .fix-steps {
+.error-card .fix-steps {
   font-size: 13px;
 }
 .error-card .command {

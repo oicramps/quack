@@ -10,6 +10,8 @@ import type {
   FixStep,
   HistoryTurn,
   ProgressStep,
+  WorkspaceSaveRequest,
+  WorkspaceStatus,
 } from '@quack/shared';
 import { INSTALL_COMMAND, PROTOCOL_VERSION, QUACK_VERSION, ciCommentText, isOlderVersion, parseCiReport } from '@quack/shared';
 import { type CompanionClient, newRequestId } from '../lib/client';
@@ -84,7 +86,7 @@ function threadsReducer(state: Record<string, Thread>, action: Action): Record<s
 
 type Connection =
   | { state: 'checking' }
-  | { state: 'connected'; version: string; protocol: number }
+  | { state: 'connected'; version: string; protocol: number; workspaceSupported?: boolean }
   | { state: 'disconnected'; error: string };
 
 const EXPLAIN_CI = 'Explain failing CI';
@@ -185,6 +187,9 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
   const [running, setRunning] = useState<{ requestId: string; turnId: string } | null>(null);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [updateDismissed, setUpdateDismissed] = useState(false);
+  const [workspace, setWorkspace] = useState<WorkspaceStatus | null>(null);
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [workspaceFeedback, setWorkspaceFeedback] = useState<{ error?: string; notice?: string } | null>(null);
   /** The comment just copied for GitHub, offered again from the toast. */
   const [toast, setToast] = useState<{ selection: CodeSelection | null; seq: number } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -239,7 +244,12 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
       if (msg.type !== 'status') return;
       const pending = msg.pending ?? [];
       const reported = msg.agents ?? [];
-      setConnection({ state: 'connected', version: msg.version, protocol: msg.protocol ?? 0 });
+      setConnection({
+        state: 'connected',
+        version: msg.version,
+        protocol: msg.protocol ?? 0,
+        workspaceSupported: Boolean(msg.capabilities?.workspace),
+      });
       setPendingAgents(pending);
       // While a re-check is running, keep showing the previous result for agents not checked yet.
       setAgents((prev) =>
@@ -255,6 +265,8 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
     checkStatus();
     return client.onDisconnect((error, requestIds) => {
       setConnection({ state: 'disconnected', error });
+      setWorkspace(null);
+      setWorkspaceBusy(false);
       setRunning((r) => (r && requestIds.includes(r.requestId) ? null : r));
       for (const k of Object.keys(threadsRef.current)) {
         for (const t of threadsRef.current[k].turns) {
@@ -270,6 +282,62 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
       }
     });
   }, [client, checkStatus]);
+
+  const checkWorkspace = useCallback(() => {
+    if (connection.state !== 'connected' || !connection.workspaceSupported) return;
+    const requestId = newRequestId();
+    setWorkspaceBusy(true);
+    client.send(
+      {
+        type: 'workspace_check',
+        requestId,
+        ...(pr && { pr: { owner: pr.owner, repo: pr.repo } }),
+      },
+      (msg) => {
+        if (msg.type === 'workspace') {
+          setWorkspace(msg.workspace);
+          setWorkspaceFeedback(msg.error || msg.notice ? { error: msg.error, notice: msg.notice } : null);
+          setWorkspaceBusy(false);
+        } else if (msg.type === 'event' && msg.event.type === 'error') {
+          setWorkspaceFeedback({ error: msg.event.message });
+          setWorkspaceBusy(false);
+        }
+      },
+    );
+  }, [client, connection.state, connection.state === 'connected' ? connection.workspaceSupported : false, pr?.owner, pr?.repo]);
+
+  const saveWorkspace = useCallback(
+    (patch: Omit<WorkspaceSaveRequest, 'type' | 'requestId' | 'pr'>) => {
+      if (connection.state !== 'connected' || !connection.workspaceSupported) return;
+      const requestId = newRequestId();
+      setWorkspaceBusy(true);
+      client.send(
+        {
+          type: 'workspace_save',
+          requestId,
+          ...patch,
+          ...(pr && { pr: { owner: pr.owner, repo: pr.repo } }),
+        },
+        (msg) => {
+          if (msg.type === 'workspace') {
+            setWorkspace(msg.workspace);
+            setWorkspaceFeedback(msg.error || msg.notice ? { error: msg.error, notice: msg.notice } : null);
+            setWorkspaceBusy(false);
+          } else if (msg.type === 'event' && msg.event.type === 'error') {
+            setWorkspaceFeedback({ error: msg.event.message });
+            setWorkspaceBusy(false);
+          }
+        },
+      );
+    },
+    [client, connection.state, connection.state === 'connected' ? connection.workspaceSupported : false, pr?.owner, pr?.repo],
+  );
+
+  useEffect(() => {
+    if (connection.state !== 'connected' || !connection.workspaceSupported) return;
+    setWorkspaceFeedback(null);
+    checkWorkspace();
+  }, [connection.state, connection.state === 'connected' ? connection.workspaceSupported : false, pr?.owner, pr?.repo, checkWorkspace]);
 
   // Failing checks for the empty state's "Check CI" row. Hidden when gh can't answer.
   useEffect(() => {
@@ -546,6 +614,11 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
         recent={recent}
         readiness={readiness}
         install={connection.state === 'disconnected' ? { error: connection.error, onRetry: checkStatus } : null}
+        workspace={workspace}
+        workspaceBusy={workspaceBusy}
+        workspaceFeedback={workspaceFeedback}
+        onTestWorkspace={checkWorkspace}
+        onSaveWorkspace={saveWorkspace}
       />
       </div>
     );
@@ -613,6 +686,16 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
         ) : (
           <>
             {empty && loading && <Readiness connection={connection} agent={agent} pending={pendingAgents} />}
+            {empty && !loading && workspace?.prMatch && !workspace.prMatch.found && (
+              <WorkspaceCard
+                workspace={workspace}
+                pr={pr}
+                busy={workspaceBusy}
+                feedback={workspaceFeedback}
+                onTest={checkWorkspace}
+                onSave={saveWorkspace}
+              />
+            )}
             {empty && !loading && chips.length > 0 && <SelectionIntro chips={chips} sha={knownSha} />}
             {empty && !loading && !chips.length && (
               <EmptyAsk
@@ -819,11 +902,21 @@ function NoPullRequest({
   recent,
   readiness,
   install,
+  workspace,
+  workspaceBusy,
+  workspaceFeedback,
+  onTestWorkspace,
+  onSaveWorkspace,
 }: {
   recent: RecentPr[];
   readiness: { kind: 'success' | 'error' | 'loading'; text: string };
   /** Present when the companion is unreachable, including before any PR is open. */
   install: { error: string; onRetry: () => void } | null;
+  workspace: WorkspaceStatus | null;
+  workspaceBusy: boolean;
+  workspaceFeedback: { error?: string; notice?: string } | null;
+  onTestWorkspace: () => void;
+  onSaveWorkspace: (patch: Omit<WorkspaceSaveRequest, 'type' | 'requestId' | 'pr'>) => void;
 }) {
   return (
     <div className="body start">
@@ -842,6 +935,15 @@ function NoPullRequest({
           error={install.error}
           onRetry={install.onRetry}
           detail="Quack needs its local companion before it can read a pull request. Once installed, your browser starts it on its own."
+        />
+      )}
+      {!install && workspace && (
+        <WorkspaceCard
+          workspace={workspace}
+          busy={workspaceBusy}
+          feedback={workspaceFeedback}
+          onTest={onTestWorkspace}
+          onSave={onSaveWorkspace}
         />
       )}
       {recent.length > 0 && (
@@ -875,6 +977,226 @@ function NoPullRequest({
         </div>
       )}
     </div>
+  );
+}
+
+function workspaceNeedsSetup(w: WorkspaceStatus): boolean {
+  const blocked = w.roots.some((r) => r.state === 'blocked') || w.overrides.some((o) => o.state === 'blocked');
+  const badOverride = w.overrides.some((o) => o.state !== 'ok');
+  return !w.configured || !w.gitAvailable || blocked || badOverride || w.totalRepos === 0;
+}
+
+function rootStateLabel(state: WorkspaceStatus['roots'][number]['state'], count: number): string {
+  switch (state) {
+    case 'ok':
+      return plural(count, 'repo');
+    case 'blocked':
+      return 'Permission blocked';
+    case 'missing':
+      return 'Not found';
+    case 'empty':
+      return '0 repos';
+  }
+}
+
+function WorkspaceCard({
+  workspace,
+  pr,
+  busy,
+  feedback,
+  onTest,
+  onSave,
+}: {
+  workspace: WorkspaceStatus;
+  pr?: { owner: string; repo: string };
+  busy: boolean;
+  feedback: { error?: string; notice?: string } | null;
+  onTest: () => void;
+  onSave: (patch: Omit<WorkspaceSaveRequest, 'type' | 'requestId' | 'pr'>) => void;
+}) {
+  const [pathInput, setPathInput] = useState('');
+  const [editing, setEditing] = useState(false);
+
+  const blocked = [...workspace.roots.filter((r) => r.state === 'blocked').map((r) => r.path), ...workspace.overrides.filter((o) => o.state === 'blocked').map((o) => o.path)];
+  const detectedRoots = workspace.roots.filter((r) => r.state === 'ok');
+  const needsSetup = Boolean(pr && workspace.prMatch && !workspace.prMatch.found) || workspaceNeedsSetup(workspace);
+  const hasProblem = Boolean(pr && workspace.prMatch && !workspace.prMatch.found) || !workspace.gitAvailable || blocked.length > 0 || workspace.overrides.some((o) => o.state !== 'ok') || workspace.totalRepos === 0;
+  const showBody = needsSetup || editing;
+
+  const submitPath = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pathInput.trim() || busy) return;
+    onSave({ addPath: pathInput.trim() });
+    setPathInput('');
+  };
+
+  if (!showBody) {
+    const activeSummary =
+      detectedRoots.length > 0
+        ? detectedRoots
+            .slice(0, 2)
+            .map((r) => r.path)
+            .join(', ') + (detectedRoots.length > 2 ? ` +${detectedRoots.length - 2}` : '')
+        : `${plural(workspace.overrides.filter((o) => o.state === 'ok').length, 'linked repo')}`;
+    return (
+      <section className="workspace-card ok" aria-label="Code folders">
+        <div className="workspace-summary">
+          <StatusIcon kind={busy ? 'loading' : 'success'} size={14} />
+          <div className="workspace-summary-text">
+            <strong>{plural(workspace.totalRepos, 'repo')} ready</strong>
+            <span className="muted small">{activeSummary}</span>
+          </div>
+          <div className="workspace-actions">
+            <button type="button" className="ghost" disabled={busy} onClick={onTest}>
+              Test
+            </button>
+            <button type="button" className="ghost" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          </div>
+        </div>
+        {feedback?.notice && <p className="muted small">{feedback.notice}</p>}
+      </section>
+    );
+  }
+
+  const prKeyName = pr ? `${pr.owner}/${pr.repo}` : null;
+  const visibleRoots = workspace.configured
+    ? workspace.roots
+    : workspace.roots.filter((r) => r.state === 'ok' || r.state === 'blocked');
+
+  const title = prKeyName
+    ? `Locate ${prKeyName}`
+    : !workspace.configured
+      ? 'Set up your code folder'
+      : needsSetup
+        ? 'Code folder check failed'
+        : 'Code folders';
+
+  const subtitle = prKeyName
+    ? workspace.prMatch?.detail ?? `No local clone of ${prKeyName} was found in your configured folders.`
+    : !workspace.configured
+      ? detectedRoots.length > 0 && blocked.length === 0
+        ? `Quack found ${plural(workspace.totalRepos, 'git repo')} in your default folders. Save them or add where your work repos live.`
+        : 'Tell Quack where your git clones live so it can inspect PRs locally.'
+      : !workspace.gitAvailable
+        ? 'The companion could not run git. Install git and test again.'
+        : blocked.length > 0
+          ? `Your browser does not have permission to read ${blocked.join(', ')}.`
+          : workspace.totalRepos === 0
+            ? 'No git repositories were found in your configured folders (checked 2 levels deep).'
+            : `${plural(workspace.totalRepos, 'git repo')} accessible.`;
+
+  return (
+    <section className={hasProblem ? 'setup-card workspace-card' : 'workspace-card'} aria-label={title}>
+      <div className="setup-head">
+        <span className="setup-icon">
+          <StatusIcon kind={busy ? 'loading' : hasProblem ? 'error' : 'success'} size={16} />
+        </span>
+        <div className="workspace-head-text">
+          <h3>{title}</h3>
+          <p className="muted">{subtitle}</p>
+        </div>
+        {!needsSetup && (
+          <button type="button" className="ghost icon-only" aria-label="Close folder editor" onClick={() => setEditing(false)}>
+            <Close size={12} />
+          </button>
+        )}
+      </div>
+
+      {blocked.length > 0 && (
+        <p className="small">
+          Allow your browser in <strong>System Settings → Privacy &amp; Security → Files and Folders</strong>, restart the browser, then press{' '}
+          <strong>Test</strong> — or remove that folder below if your code is elsewhere.
+        </p>
+      )}
+
+      {(visibleRoots.length > 0 || workspace.overrides.length > 0) && (
+        <ul className="workspace-list" aria-label="Configured locations">
+          {visibleRoots.map((r) => (
+            <li key={r.path} className="workspace-row">
+              <code className="workspace-path" title={r.path}>
+                {r.path}
+              </code>
+              <span className={`workspace-badge ${r.state}`}>{rootStateLabel(r.state, r.repoCount)}</span>
+              {workspace.configured && (
+                <button
+                  type="button"
+                  className="ghost icon-only"
+                  aria-label={`Remove ${r.path}`}
+                  disabled={busy}
+                  onClick={() =>
+                    onSave({ scanRoots: workspace.roots.filter((item) => item.path !== r.path).map((item) => item.path) })
+                  }
+                >
+                  <Close size={12} />
+                </button>
+              )}
+            </li>
+          ))}
+          {workspace.overrides.map((o) => (
+            <li key={o.repo} className="workspace-row">
+              <span className="workspace-path">
+                <strong>{o.repo}</strong> → <code>{o.path}</code>
+              </span>
+              <span className={`workspace-badge ${o.state === 'ok' ? 'ok' : 'blocked'}`}>
+                {o.state === 'ok' ? 'Linked' : o.detail ?? o.state}
+              </span>
+              <button
+                type="button"
+                className="ghost icon-only"
+                aria-label={`Unlink ${o.repo}`}
+                disabled={busy}
+                onClick={() => onSave({ repoPaths: { [o.repo]: null } })}
+              >
+                <Close size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form className="workspace-form" onSubmit={submitPath}>
+        <input
+          type="text"
+          value={pathInput}
+          onChange={(e) => setPathInput(e.target.value)}
+          placeholder={pr ? `~/work/${pr.repo} or ~/work` : '~/work or /path/to/repos'}
+          aria-label={pr ? `Path to ${pr.repo} or your code folder` : 'Code folder or repository path'}
+        />
+        <button type="submit" className="primary" disabled={busy || !pathInput.trim()}>
+          Save &amp; test
+        </button>
+      </form>
+
+      {feedback?.error && <p className="workspace-msg err">{feedback.error}</p>}
+      {feedback?.notice && <p className="workspace-msg ok">{feedback.notice}</p>}
+
+      <div className="row">
+        {!workspace.configured && detectedRoots.length > 0 && (
+          <button
+            type="button"
+            className="primary"
+            disabled={busy}
+            onClick={() => onSave({ scanRoots: detectedRoots.map((r) => r.path) })}
+          >
+            Save detected {plural(detectedRoots.length, 'folder')}
+          </button>
+        )}
+        <button type="button" className="secondary" disabled={busy} onClick={onTest}>
+          <Retry size={14} /> {busy ? 'Testing…' : 'Test again'}
+        </button>
+      </div>
+
+      {prKeyName && (
+        <div className="workspace-clone-hint">
+          <span className="muted small">Not cloned yet? Clone into a readable folder:</span>
+          <CommandBlock
+            command={`git clone git@github.com:${prKeyName}.git ${(detectedRoots[0]?.path ?? '~/Projects')}/${pr!.repo}`}
+          />
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1432,35 +1754,37 @@ const TurnView = memo(function TurnView({
 
           {error && !cancelled && (
             <div className="error-card" role="alert">
-              <DuckError width={64} />
-              <div className="error-content">
-                <strong className="error-title">{errorTitle(error.code, label, Math.round(elapsedMs / 1000))}</strong>
-                <p className="muted small">{error.message}</p>
-                {error.fixSteps && error.fixSteps.length > 0 && <FixSteps steps={error.fixSteps} />}
-                <div className="row">
-                  {(error.code === 'agent_not_installed' || error.code === 'agent_not_logged_in') && (
-                    <button type="button" className="secondary" onClick={onRecheck}>
-                      Re-check
-                    </button>
-                  )}
-                  <button type="button" className="primary" onClick={onRetry}>
-                    Retry
-                  </button>
-                  {otherAgent && (
-                    <button type="button" className="secondary" onClick={() => onRetryOther(otherAgent.id)}>
-                      Try {otherAgent.label}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() =>
-                      navigator.clipboard.writeText(`${error.code}: ${error.message}${sha ? ` (worktree ${sha})` : ''}`)
-                    }
-                  >
-                    Copy log
-                  </button>
+              <div className="error-head">
+                <DuckError width={52} />
+                <div className="error-summary">
+                  <strong className="error-title">{errorTitle(error.code, label, Math.round(elapsedMs / 1000))}</strong>
+                  <p className="muted small">{error.message}</p>
                 </div>
+              </div>
+              {error.fixSteps && error.fixSteps.length > 0 && <FixSteps steps={error.fixSteps} />}
+              <div className="row">
+                {(error.code === 'agent_not_installed' || error.code === 'agent_not_logged_in') && (
+                  <button type="button" className="secondary" onClick={onRecheck}>
+                    Re-check
+                  </button>
+                )}
+                <button type="button" className="primary" onClick={onRetry}>
+                  Retry
+                </button>
+                {otherAgent && error.code !== 'repo_not_found' && (
+                  <button type="button" className="secondary" onClick={() => onRetryOther(otherAgent.id)}>
+                    Try {otherAgent.label}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() =>
+                    navigator.clipboard.writeText(`${error.code}: ${error.message}${sha ? ` (worktree ${sha})` : ''}`)
+                  }
+                >
+                  Copy log
+                </button>
               </div>
             </div>
           )}

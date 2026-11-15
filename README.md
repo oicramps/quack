@@ -55,7 +55,13 @@ Restart your browser once, open any PR on `github.com`, and click the **Quack** 
 
 ## Configuration & Cleanup
 
-On first run, Quack creates `~/.quack/config.json` and scans common project folders (`~/Documents/Dev/Projects`, `~/Projects`, `~/Developer`, `~/repos`, `~/src`, `~/code`) up to 2 levels deep to match your local clone's `origin` remote. Add custom clone locations under `"repoPaths"`:
+On first run, Quack creates `~/.quack/config.json` and scans common project folders (`~/Documents/Dev/Projects`, `~/Projects`, `~/Developer`, `~/Development`, `~/Dev`, `~/repos`, `~/src`, `~/code`, `~/workspace`, `~/work`, `~/GitHub`, `~/git`) up to 2 levels deep to match your local clone's `origin` remote. To link a clone anywhere else (or with a custom SSH host alias):
+
+```sh
+~/.quack/bin/quack-companion link /path/to/clone owner/repo
+```
+
+Or edit `"repoPaths"` / `"scanRoots"` directly in `~/.quack/config.json`:
 
 ```json
 {
