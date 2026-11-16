@@ -106,13 +106,12 @@ export function createClaudeParser(cwd: string): LineParser {
 
 const DENIED_TOOLS = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'WebFetch', 'WebSearch', 'Task', 'mcp__*'];
 
-/** Shown when this Claude build advertises neither project isolation nor a tool deny list. */
-export const CLAUDE_ISOLATION_HINT = 'This build does not advertise project-settings isolation.';
+/** Shown when this Claude build does not advertise `--restricted`. Quack will not start it. */
+export const CLAUDE_UPDATE_TEXT = 'Update Claude Code. This version cannot confine a pull request, so Quack will not start it.';
 
-/** Returns the ready-state hint when `claude --help` lacks `--restricted` and a disallowed-tools flag. */
-export function claudeIsolationHint(help: string): string | null {
-  if (help.includes('--restricted') || help.includes('--disallowedTools') || help.includes('--disallowed-tools')) return null;
-  return CLAUDE_ISOLATION_HINT;
+/** True when `claude --help` does not advertise `--restricted`. A tool deny list is not enough. */
+export function claudeRequiresUpdate(help: string): boolean {
+  return !help.includes('--restricted');
 }
 
 /**
@@ -153,14 +152,24 @@ export const claudeAdapter: Adapter = {
       loggedIn(bin),
       run(bin, ['--help'], { timeoutMs: 15_000 }),
     ]);
-    const hint = claudeIsolationHint(help.stdout + help.stderr);
+    const helpText = help.stdout + help.stderr;
+    if (claudeRequiresUpdate(helpText)) {
+      return {
+        id: 'claude-code',
+        label: 'Claude Code',
+        state: 'not_installed',
+        version: version.stdout.trim(),
+        models: MODELS,
+        fixSteps: [{ text: CLAUDE_UPDATE_TEXT, command: 'claude update' }, RECHECK],
+      };
+    }
     return {
       id: 'claude-code',
       label: 'Claude Code',
       state: isLoggedIn ? 'ready' : 'not_logged_in',
       version: version.stdout.trim(),
       models: MODELS,
-      fixSteps: isLoggedIn ? (hint ? [{ text: hint }] : []) : [LOGIN, RECHECK],
+      fixSteps: isLoggedIn ? [] : [LOGIN, RECHECK],
     };
   },
 
@@ -172,6 +181,10 @@ export const claudeAdapter: Adapter = {
     }
     const help = await run(bin, ['--help'], { timeoutMs: 15_000 });
     const helpText = help.stdout + help.stderr;
+    if (claudeRequiresUpdate(helpText)) {
+      yield { type: 'error', message: CLAUDE_UPDATE_TEXT };
+      return;
+    }
     const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan', ...claudeGuardArgs(helpText)];
     if (helpText.includes('--include-partial-messages')) args.push('--include-partial-messages');
     if (opts.model) args.push('--model', opts.model);

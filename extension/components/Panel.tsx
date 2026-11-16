@@ -18,7 +18,7 @@ import { type CompanionClient, newRequestId } from '../lib/client';
 import { prKey, selectionChip, selectionLabel } from '../lib/github';
 import type { PanelPage } from '../lib/page';
 import type { TabRequest } from '../lib/messages';
-import { AgentPicker, ModelPicker, StatusDot, agentLabel, modelLabel } from './AgentPicker';
+import { AgentPicker, ModelPicker, StatusDot, agentLabel, agentNeedsUpdate, agentStateLabel, modelLabel } from './AgentPicker';
 import { AnswerBody } from './CiReport';
 import { DuckError, DuckSuccess, QuackLogo, StatusIcon } from './brand';
 import { CommandBlock, FixSteps } from './FixSteps';
@@ -598,14 +598,14 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
         ? { tone: 'idle', text: 'Checking…' }
         : agentStatus.state === 'ready'
           ? { tone: 'ok', text: 'Ready' }
-          : { tone: 'warn', text: agentStatus.state === 'not_installed' ? 'Not installed' : 'Not logged in' };
+          : { tone: 'warn', text: agentStateLabel(agentStatus) };
     const readiness: { kind: 'success' | 'error' | 'loading'; text: string } = offline
       ? { kind: 'error', text: 'Can’t reach the companion' }
       : loading || !agentStatus
         ? { kind: 'loading', text: 'Checking your agents…' }
         : agentStatus.state === 'ready'
           ? { kind: 'success', text: `${agentStatus.label} · ${modelLabel(agent, model)} is ready` }
-          : { kind: 'error', text: `${agentStatus.label} ${agentStatus.state === 'not_installed' ? 'isn’t installed' : 'isn’t logged in'}` };
+          : { kind: 'error', text: agentProblemSentence(agentStatus) };
     return (
       <div className="quack panel">
         <PanelHeader pickers={pickers} status={status} running={false} />
@@ -633,7 +633,7 @@ export function Panel({ page, client }: { page: PanelPage; client: CompanionClie
         : lastTurn?.status === 'error' && lastTurn.error?.code !== 'cancelled'
           ? { tone: 'err', text: 'Error' }
           : agentStatus && agentStatus.state !== 'ready'
-            ? { tone: 'warn', text: agentStatus.state === 'not_installed' ? 'Not installed' : 'Not logged in' }
+            ? { tone: 'warn', text: agentStateLabel(agentStatus) }
             : { tone: 'ok', text: 'Ready' };
 
   const incompatible = connection.state === 'connected' && connection.protocol !== PROTOCOL_VERSION;
@@ -1366,6 +1366,12 @@ function PrepSteps({ steps }: { steps: { state: 'done' | 'current' | 'waiting'; 
   );
 }
 
+function agentProblemSentence(status: AgentStatus): string {
+  if (agentNeedsUpdate(status)) return `${status.label} needs an update`;
+  if (status.state === 'not_installed') return `${status.label} isn’t installed`;
+  return `${status.label} isn’t logged in`;
+}
+
 function AgentSetup({ status, onRecheck }: { status: AgentStatus; onRecheck: () => void }) {
   return (
     <section className="setup-card">
@@ -1375,7 +1381,7 @@ function AgentSetup({ status, onRecheck }: { status: AgentStatus; onRecheck: () 
         </span>
         <div>
           <h3>
-            {status.label} {status.state === 'not_installed' ? 'isn’t installed' : 'isn’t logged in'}
+            {agentProblemSentence(status)}
           </h3>
           <p className="muted">Follow these steps, then re-check. Or pick another agent above.</p>
         </div>

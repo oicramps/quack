@@ -14,6 +14,46 @@ export function childEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: searchPath(), GIT_TERMINAL_PROMPT: '0', NO_COLOR: '1' };
 }
 
+/**
+ * Credential variables the review agent must not inherit. `git` and `gh` keep
+ * `childEnv()` so fetch and Check CI still authenticate. Proxy, CA, locale, and
+ * the CLI's own API key stay.
+ */
+const AGENT_SECRET_ENV = new Set([
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+  'GITHUB_PAT',
+  'GH_ENTERPRISE_TOKEN',
+  'SSH_AUTH_SOCK',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_SESSION_TOKEN',
+  'AWS_SECURITY_TOKEN',
+  'AWS_SHARED_CREDENTIALS_FILE',
+  'AWS_WEB_IDENTITY_TOKEN_FILE',
+  'GOOGLE_APPLICATION_CREDENTIALS',
+  'GOOGLE_CREDENTIALS',
+  'CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE',
+  'AZURE_CLIENT_SECRET',
+  'ARM_CLIENT_SECRET',
+  'KUBECONFIG',
+  'NPM_TOKEN',
+  'NODE_AUTH_TOKEN',
+]);
+
+/** Environment for Claude and Cursor: the companion environment without the credentials above. */
+export function agentEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined || AGENT_SECRET_ENV.has(key.toUpperCase())) continue;
+    env[key] = value;
+  }
+  env.PATH = searchPath();
+  env.GIT_TERMINAL_PROMPT = '0';
+  env.NO_COLOR = '1';
+  return env;
+}
+
 /** Resolves the first executable matching `names` on `searchPath()`. */
 export function findBinary(names: string[]): string | null {
   for (const dir of searchPath().split(':')) {
@@ -74,7 +114,7 @@ export function run(
 
 /** Spawns a child process in its own process group (`detached: true`) with piped stdout/stderr. */
 export function spawnStreaming(file: string, args: string[], cwd: string, opts: { stdin?: boolean } = {}): ChildProcess {
-  return spawn(file, args, { cwd, env: childEnv(), stdio: [opts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], detached: true });
+  return spawn(file, args, { cwd, env: agentEnv(), stdio: [opts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'], detached: true });
 }
 
 /** Terminates the child's process group with SIGTERM, escalating to SIGKILL after 3s. */

@@ -91,8 +91,8 @@ sequenceDiagram
 
 | Adapter | CLI Invocation | Read-Only Enforcement | Follow-up Sessions |
 | --- | --- | --- | --- |
-| **Cursor** (`cursor.ts`, `acp.ts`) | `cursor-agent acp` (JSON-RPC 2.0 over stdio) | `--sandbox enabled`, `--mode ask`, and `--skip-worktree-setup` when the CLI advertises them. The session is also set to `ask`, with `writeTextFile: false`, `terminal: false`, and permission prompts auto-cancelled | Keeps `AcpClient` alive in memory for 15 min (`ACP_IDLE_MS`) |
-| **Claude Code** (`claude.ts`, `stream.ts`) | `claude -p --output-format stream-json --verbose` | `--permission-mode plan`, plus `--restricted` when the CLI has it (no project settings, hooks, or MCP; file tools stay in the worktree). Older CLIs get `--setting-sources user` and a tool deny list | Resumes via `--resume <sessionId>` |
+| **Cursor** (`cursor.ts`, `acp.ts`) | `cursor-agent acp` (JSON-RPC 2.0 over stdio) | Requires `--sandbox` in the top-level or `acp` help. Also passes `--mode ask` and `--skip-worktree-setup` when advertised. The session is set to `ask`, with `writeTextFile: false`, `terminal: false`, and permission prompts auto-cancelled. A CLI without `--sandbox` stays unavailable and asks for an update | Keeps `AcpClient` alive in memory for 15 min (`ACP_IDLE_MS`) |
+| **Claude Code** (`claude.ts`, `stream.ts`) | `claude -p --output-format stream-json --verbose` | Requires `--restricted` before starting, and always passes `--permission-mode plan`. A build without `--restricted` stays unavailable and asks for an update | Resumes via `--resume <sessionId>` |
 
 After every turn, `session.ts` checks `git status --porcelain` in the worktree (`changedFiles`), warns if anything new was touched, and `discardWorktreeChanges` runs `git reset --hard` and `git clean -ffdx` before the lock is released. Escaping symlinks are removed before the agent starts. Every git command is run with `core.hooksPath=/dev/null` and `core.fsmonitor=false`.
 
