@@ -3,4 +3,8 @@ dist/
 .output/
 .wxt/
 *.pem
+.env
+.env.*
+credentials.json
+*.key
 .DS_Store

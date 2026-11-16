@@ -73,11 +73,13 @@ Or edit `"repoPaths"` / `"scanRoots"` directly in `~/.quack/config.json`:
 }
 ```
 
-Your working tree and local branches are **never modified**. To remove cached worktrees or uninstall the host at any time:
+`retentionDays` and `maxWorktrees` apply only under `worktreeRoot`. The companion applies them when it starts and when you run `prune`: a `pr-<n>` directory older than `retentionDays` is deleted, then the oldest remaining directories are deleted until `maxWorktrees` are left. The matching `refs/pr-review/<n>` ref is deleted when the clone is known. Clones and `scanRoots` are left alone.
+
+Your working tree and local branches are **never modified**. To apply that retention policy or uninstall the host:
 
 ```sh
 npx quack-companion doctor      # Check config and local AI agent status
-npx quack-companion prune       # Remove all ~/.quack/worktrees and refs/pr-review/* refs
+npx quack-companion prune       # Apply retentionDays and maxWorktrees under ~/.quack/worktrees
 npx quack-companion uninstall   # Unregister browser manifests and remove ~/.quack/bin
 ```
 

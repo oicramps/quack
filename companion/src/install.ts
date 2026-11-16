@@ -136,5 +136,5 @@ export function uninstall(opts: Pick<InstallOptions, 'binDir' | 'platform' | 'ho
     }
   }
   fs.rmSync(binDir, { recursive: true, force: true });
-  console.log(`Removed ${binDir}. Worktrees and config in ${path.dirname(binDir).replace(os.homedir(), '~')} were kept; run prune first to remove worktrees.`);
+  console.log(`Removed ${binDir}. Worktrees and config in ${path.dirname(binDir).replace(os.homedir(), '~')} were kept; run prune to apply retentionDays and maxWorktrees.`);
 }

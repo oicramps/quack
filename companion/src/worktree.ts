@@ -133,30 +133,147 @@ export async function acquireLock(dir: string, signal: AbortSignal): Promise<() 
   return done;
 }
 
-/** Removes all Quack worktrees under `config.worktreeRoot` and deletes their `refs/pr-review/*` refs. */
-export async function pruneAll(config: Config, findCloneFor: (owner: string, repo: string) => Promise<string | null>): Promise<string[]> {
-  const removed: string[] = [];
-  const owners = fs.existsSync(config.worktreeRoot) ? fs.readdirSync(config.worktreeRoot) : [];
-  for (const owner of owners) {
-    const ownerDir = path.join(config.worktreeRoot, owner);
-    if (!fs.statSync(ownerDir).isDirectory()) continue;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+interface PrDir {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  dir: string;
+  mtimeMs: number;
+  symlink: boolean;
+}
+
+function isInside(root: string, target: string): boolean {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(target);
+  return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
+}
+
+function realDirInside(rootReal: string, dir: string): boolean {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(dir);
+  } catch {
+    return false;
+  }
+  if (!stat.isDirectory()) return false;
+  try {
+    return isInside(rootReal, fs.realpathSync(dir));
+  } catch {
+    return false;
+  }
+}
+
+function retentionLimits(config: Config): { days: number; max: number } {
+  const days = Number(config.retentionDays);
+  const max = Number(config.maxWorktrees);
+  return {
+    days: Number.isFinite(days) && days >= 0 ? days : 7,
+    max: Number.isFinite(max) && max >= 0 ? Math.floor(max) : 20,
+  };
+}
+
+/** Lists `pr-<n>` directories under `root`. Symlink owners, repos, and escaping targets are skipped. */
+function listPrDirs(root: string): PrDir[] {
+  const rootReal = fs.realpathSync(root);
+  const found: PrDir[] = [];
+  for (const owner of fs.readdirSync(root)) {
+    const ownerDir = path.join(root, owner);
+    if (!realDirInside(rootReal, ownerDir)) continue;
     for (const repo of fs.readdirSync(ownerDir)) {
       const repoDir = path.join(ownerDir, repo);
-      if (!fs.statSync(repoDir).isDirectory()) continue;
-      const clone = await findCloneFor(owner, repo);
+      if (!realDirInside(rootReal, repoDir)) continue;
       for (const entry of fs.readdirSync(repoDir)) {
-        const m = entry.match(/^pr-(\d+)$/);
-        if (!m) continue;
+        const match = /^pr-(\d+)$/.exec(entry);
+        if (!match) continue;
         const dir = path.join(repoDir, entry);
-        if (clone) {
-          await runGit(['-C', clone, 'worktree', 'remove', '--force', dir]);
-          await runGit(['-C', clone, 'update-ref', '-d', prRef(Number(m[1]))]);
+        if (!isInside(root, dir)) continue;
+        let stat: fs.Stats;
+        try {
+          stat = fs.lstatSync(dir);
+        } catch {
+          continue;
         }
-        fs.rmSync(dir, { recursive: true, force: true });
-        removed.push(dir);
+        if (stat.isSymbolicLink()) {
+          found.push({ owner, repo, prNumber: Number(match[1]), dir, mtimeMs: stat.mtimeMs, symlink: true });
+          continue;
+        }
+        if (!stat.isDirectory()) continue;
+        try {
+          if (!isInside(rootReal, fs.realpathSync(dir))) continue;
+        } catch {
+          continue;
+        }
+        found.push({ owner, repo, prNumber: Number(match[1]), dir, mtimeMs: stat.mtimeMs, symlink: false });
       }
-      if (clone) await runGit(['-C', clone, 'worktree', 'prune']);
     }
   }
+  return found;
+}
+
+/**
+ * Deletes one `pr-<n>` entry under `root`. A symlink is unlinked and its target
+ * is left alone. A directory is removed only when its real path stays inside `root`.
+ */
+async function removePrDir(root: string, entry: PrDir, clone: string | null): Promise<boolean> {
+  if (!isInside(root, entry.dir)) return false;
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(entry.dir);
+  } catch {
+    return false;
+  }
+  if (stat.isSymbolicLink()) {
+    fs.unlinkSync(entry.dir);
+    return true;
+  }
+  if (!stat.isDirectory()) return false;
+  let real: string;
+  try {
+    real = fs.realpathSync(entry.dir);
+  } catch {
+    return false;
+  }
+  if (!isInside(fs.realpathSync(root), real)) return false;
+  if (clone) {
+    await runGit(['-C', clone, 'worktree', 'remove', '--force', entry.dir]);
+    await runGit(['-C', clone, 'update-ref', '-d', prRef(entry.prNumber)]);
+  }
+  fs.rmSync(entry.dir, { recursive: true, force: true });
+  return true;
+}
+
+/**
+ * Applies `retentionDays` and `maxWorktrees` to `pr-<n>` directories under
+ * `config.worktreeRoot` only. Clones, scan roots, and anything outside that
+ * directory are not scanned or deleted.
+ */
+export async function enforceRetention(
+  config: Config,
+  findCloneFor: (owner: string, repo: string) => Promise<string | null>,
+  now = Date.now(),
+): Promise<string[]> {
+  if (!fs.existsSync(config.worktreeRoot)) return [];
+  const { days, max } = retentionLimits(config);
+  const cutoff = now - days * DAY_MS;
+  const entries = listPrDirs(config.worktreeRoot);
+  const expired = entries.filter((entry) => entry.mtimeMs < cutoff);
+  const fresh = entries.filter((entry) => entry.mtimeMs >= cutoff).sort((a, b) => a.mtimeMs - b.mtimeMs || a.dir.localeCompare(b.dir));
+  const over = Math.max(0, fresh.length - max);
+  const doomed = [...expired, ...fresh.slice(0, over)];
+  const removed: string[] = [];
+  const clones = new Map<string, string | null>();
+  const pruned = new Set<string>();
+  for (const entry of doomed) {
+    const key = `${entry.owner}\0${entry.repo}`;
+    if (!clones.has(key)) clones.set(key, await findCloneFor(entry.owner, entry.repo));
+    const clone = clones.get(key) ?? null;
+    if (await removePrDir(config.worktreeRoot, entry, clone)) {
+      removed.push(entry.dir);
+      if (clone) pruned.add(clone);
+    }
+  }
+  for (const clone of pruned) await runGit(['-C', clone, 'worktree', 'prune']);
   return removed;
 }

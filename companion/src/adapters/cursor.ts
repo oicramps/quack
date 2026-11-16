@@ -24,6 +24,14 @@ interface Cli {
   spawnArgs: string[];
 }
 
+/** Shown when this Cursor CLI does not advertise `--sandbox`. Quack will not start it. */
+export const CURSOR_UPDATE_TEXT = 'Update the Cursor CLI. This version cannot sandbox a pull request, so Quack will not start it.';
+
+/** True when help text from the top-level CLI or `acp --help` advertises `--sandbox`. */
+export function cursorSandboxAdvertised(help: string): boolean {
+  return help.includes('--sandbox');
+}
+
 /** Argv for `cursor-agent acp`. Sandbox and ask mode are omitted when the installed CLI doesn't have them. */
 export function cursorAcpArgs(help: string): string[] {
   const args: string[] = [];
@@ -44,8 +52,8 @@ async function findCli(): Promise<Cli | null> {
     run(bin, ['--help'], { timeoutMs: 15_000 }),
     run(bin, ['acp', '--help'], { timeoutMs: 15_000 }),
   ]);
-  const helpText = help.stdout + help.stderr;
-  if (path.basename(bin) === 'agent' && !/cursor/i.test(helpText)) return null;
+  const helpText = `${help.stdout}${help.stderr}\n${acpHelp.stdout}${acpHelp.stderr}`;
+  if (path.basename(bin) === 'agent' && !/cursor/i.test(help.stdout + help.stderr)) return null;
   return {
     bin,
     name: path.basename(bin),
@@ -120,6 +128,16 @@ export const cursorAdapter: Adapter = {
         fixSteps: [{ text: `Cursor CLI ${cli.version} is too old for Quack. Update it`, command: `${cli.name} update` }, RECHECK],
       };
     }
+    if (!cursorSandboxAdvertised(cli.spawnArgs.join('\n'))) {
+      return {
+        id: 'cursor',
+        label: 'Cursor',
+        state: 'not_installed',
+        version: cli.version,
+        models: [],
+        fixSteps: [{ text: CURSOR_UPDATE_TEXT, command: `${cli.name} update` }, RECHECK],
+      };
+    }
     const [isLoggedIn, list] = await Promise.all([loggedIn(cli), models(cli)]);
     if (!isLoggedIn) {
       return {
@@ -138,6 +156,10 @@ export const cursorAdapter: Adapter = {
     const cli = await findCli();
     if (!cli?.acp) {
       yield { type: 'error', message: cli ? 'This Cursor CLI is too old for Quack. Update it and try again.' : 'Cursor CLI not found.' };
+      return;
+    }
+    if (!cursorSandboxAdvertised(cli.spawnArgs.join('\n'))) {
+      yield { type: 'error', message: CURSOR_UPDATE_TEXT };
       return;
     }
     yield* askAcp(cli.bin, opts, rememberModels, cli.spawnArgs);

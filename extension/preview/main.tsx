@@ -18,7 +18,19 @@ const AFTER_DONE = ['stale', 'draft', 'posted', 'switch'];
 const bothReady = ['error-timeout', 'switch'].includes(scenario);
 
 const agents: AgentStatus[] = [
-  { id: 'cursor', label: 'Cursor', state: 'ready', version: '2025.08.15', models: ['', 'auto', 'gpt-5', 'sonnet-4', 'sonnet-4-thinking'], fixSteps: [] },
+  scenario === 'update'
+    ? {
+        id: 'cursor',
+        label: 'Cursor',
+        state: 'not_installed',
+        version: '2025.01.01',
+        models: [],
+        fixSteps: [
+          { text: 'Update the Cursor CLI. This version cannot sandbox a pull request, so Quack will not start it.', command: 'cursor-agent update' },
+          { text: 'Then press Re-check.' },
+        ],
+      }
+    : { id: 'cursor', label: 'Cursor', state: 'ready', version: '2025.08.15', models: ['', 'auto', 'gpt-5', 'sonnet-4', 'sonnet-4-thinking'], fixSteps: [] },
   {
     id: 'claude-code',
     label: 'Claude Code',

@@ -2,11 +2,13 @@ import type { AgentId, AgentStatus, CompanionMessage, ExtensionMessage } from '@
 import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, PROTOCOL_VERSION, QUACK_VERSION } from '@quack/shared';
 import { adapters } from './adapters/index.ts';
 import { listFailingChecks } from './checks.ts';
+import { loadConfig } from './config.ts';
 import { MessageDecoder, encodeMessage } from './framing.ts';
 import { log } from './log.ts';
-import { inspectWorkspace, saveWorkspace } from './repo.ts';
+import { findClone, inspectWorkspace, saveWorkspace } from './repo.ts';
 import { handleAsk } from './session.ts';
 import { ValidationError, validateMessage } from './validate.ts';
+import { enforceRetention } from './worktree.ts';
 
 const STATUS_TTL_MS = 60_000;
 // Chrome limits host-to-extension native messages to 1 MB; chunk large text deltas to 64 KB.
@@ -29,6 +31,10 @@ export function startHost(origin: string | undefined): void {
     process.exit(1);
   }
   log('host started', QUACK_VERSION);
+  const config = loadConfig();
+  void enforceRetention(config, (owner, repo) => findClone(config, owner, repo)).catch((err: unknown) => {
+    log('retention failed', err instanceof Error ? err.message : String(err));
+  });
 
   const send = (message: CompanionMessage) => {
     if (message.type === 'event' && message.event.type === 'text' && message.event.delta.length > MAX_TEXT_DELTA) {

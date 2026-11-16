@@ -106,6 +106,14 @@ export function createClaudeParser(cwd: string): LineParser {
 
 const DENIED_TOOLS = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'WebFetch', 'WebSearch', 'Task', 'mcp__*'];
 
+/** Shown when this Claude build does not advertise `--restricted`. Quack will not start it. */
+export const CLAUDE_UPDATE_TEXT = 'Update Claude Code. This version cannot confine a pull request, so Quack will not start it.';
+
+/** True when `claude --help` does not advertise `--restricted`. A tool deny list is not enough. */
+export function claudeRequiresUpdate(help: string): boolean {
+  return !help.includes('--restricted');
+}
+
 /**
  * Flags that keep a PR's `.claude` settings, hooks, and MCP servers out of the
  * session, and that take shell, write, and network tools away on older CLIs
@@ -139,7 +147,22 @@ export const claudeAdapter: Adapter = {
         fixSteps: [{ text: 'Install Claude Code', command: 'curl -fsSL https://claude.ai/install.sh | bash' }, LOGIN, RECHECK],
       };
     }
-    const [version, isLoggedIn] = await Promise.all([run(bin, ['--version'], { timeoutMs: 15_000 }), loggedIn(bin)]);
+    const [version, isLoggedIn, help] = await Promise.all([
+      run(bin, ['--version'], { timeoutMs: 15_000 }),
+      loggedIn(bin),
+      run(bin, ['--help'], { timeoutMs: 15_000 }),
+    ]);
+    const helpText = help.stdout + help.stderr;
+    if (claudeRequiresUpdate(helpText)) {
+      return {
+        id: 'claude-code',
+        label: 'Claude Code',
+        state: 'not_installed',
+        version: version.stdout.trim(),
+        models: MODELS,
+        fixSteps: [{ text: CLAUDE_UPDATE_TEXT, command: 'claude update' }, RECHECK],
+      };
+    }
     return {
       id: 'claude-code',
       label: 'Claude Code',
@@ -158,6 +181,10 @@ export const claudeAdapter: Adapter = {
     }
     const help = await run(bin, ['--help'], { timeoutMs: 15_000 });
     const helpText = help.stdout + help.stderr;
+    if (claudeRequiresUpdate(helpText)) {
+      yield { type: 'error', message: CLAUDE_UPDATE_TEXT };
+      return;
+    }
     const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan', ...claudeGuardArgs(helpText)];
     if (helpText.includes('--include-partial-messages')) args.push('--include-partial-messages');
     if (opts.model) args.push('--model', opts.model);

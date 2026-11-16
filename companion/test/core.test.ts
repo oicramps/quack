@@ -12,8 +12,9 @@ import { contractHome } from '../src/paths.ts';
 import { findCloneWithDiagnostics, inspectWorkspace, linkClone, parseGitHubRemote, saveWorkspace } from '../src/repo.ts';
 import { fileAnchor } from '../src/selection.ts';
 import { ciCommentText, isOlderVersion, parseCiReport } from '@quack/shared';
-import { claudeGuardArgs } from '../src/adapters/claude.ts';
-import { cursorAcpArgs } from '../src/adapters/cursor.ts';
+import { claudeGuardArgs, claudeRequiresUpdate } from '../src/adapters/claude.ts';
+import { cursorAcpArgs, cursorSandboxAdvertised } from '../src/adapters/cursor.ts';
+import { agentEnv } from '../src/exec.ts';
 import { prDiff } from '../src/pr.ts';
 import { ValidationError, asCommitSha, isSafeRepoPath, validateMessage } from '../src/validate.ts';
 import { GitError, ensureCommit, hasCommit } from '../src/worktree.ts';
@@ -112,6 +113,10 @@ test('agent guard flags follow what the installed CLI advertises', () => {
   assert.deepEqual(older.slice(0, 2), ['--setting-sources', 'user']);
   assert.ok(older.includes('Bash') && older.includes('mcp__*'));
   assert.deepEqual(claudeGuardArgs('nothing'), []);
+  assert.equal(claudeRequiresUpdate('nothing'), true);
+  assert.equal(claudeRequiresUpdate('--disallowed-tools'), true);
+  assert.equal(claudeRequiresUpdate('--disallowedTools'), true);
+  assert.equal(claudeRequiresUpdate('--restricted'), false);
   assert.deepEqual(cursorAcpArgs('--model <model>\n--mode <mode>\n--sandbox <mode>\n--skip-worktree-setup'), [
     '--sandbox',
     'enabled',
@@ -120,7 +125,40 @@ test('agent guard flags follow what the installed CLI advertises', () => {
     'ask',
     'acp',
   ]);
+  assert.equal(cursorSandboxAdvertised('usage: agent acp\n--sandbox <mode>'), true);
+  assert.equal(cursorSandboxAdvertised('--model <model>'), false);
   assert.deepEqual(cursorAcpArgs('--model <model>'), ['acp']);
+});
+
+test('the review agent does not inherit git, ssh, or cloud credentials', () => {
+  const env = agentEnv({
+    HOME: '/Users/reviewer',
+    PATH: '/usr/bin',
+    TMPDIR: '/tmp',
+    LANG: 'en_US.UTF-8',
+    HTTPS_PROXY: 'http://127.0.0.1:8888',
+    SSL_CERT_FILE: '/etc/ssl/cert.pem',
+    ANTHROPIC_API_KEY: 'sk-ant-example',
+    CURSOR_API_KEY: 'cursor-example',
+    GH_TOKEN: 'ghp-example',
+    GITHUB_TOKEN: 'github-example',
+    SSH_AUTH_SOCK: '/tmp/ssh-agent',
+    AWS_SECRET_ACCESS_KEY: 'aws-example',
+    AWS_REGION: 'eu-west-1',
+    GOOGLE_APPLICATION_CREDENTIALS: '/tmp/gcp.json',
+    NPM_TOKEN: 'npm-example',
+  });
+  assert.equal(env.HOME, '/Users/reviewer');
+  assert.equal(env.TMPDIR, '/tmp');
+  assert.equal(env.LANG, 'en_US.UTF-8');
+  assert.equal(env.HTTPS_PROXY, 'http://127.0.0.1:8888');
+  assert.equal(env.SSL_CERT_FILE, '/etc/ssl/cert.pem');
+  assert.equal(env.ANTHROPIC_API_KEY, 'sk-ant-example');
+  assert.equal(env.CURSOR_API_KEY, 'cursor-example');
+  assert.equal(env.AWS_REGION, 'eu-west-1');
+  for (const secret of ['GH_TOKEN', 'GITHUB_TOKEN', 'SSH_AUTH_SOCK', 'AWS_SECRET_ACCESS_KEY', 'GOOGLE_APPLICATION_CREDENTIALS', 'NPM_TOKEN']) {
+    assert.equal(env[secret], undefined, secret);
+  }
 });
 
 test('GitHub remotes in every form map to owner/repo', () => {

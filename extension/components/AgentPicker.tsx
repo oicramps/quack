@@ -9,6 +9,18 @@ const STATE_LABEL: Record<AgentState, string> = {
   not_installed: 'Not installed',
 };
 
+/** True when the companion refused this CLI until the user updates it. */
+export function agentNeedsUpdate(status: Pick<AgentStatus, 'fixSteps'>): boolean {
+  return status.fixSteps.some((step) => /\bupdate\b/i.test(step.text));
+}
+
+/** Short status for the header and the agent menu. */
+export function agentStateLabel(status: Pick<AgentStatus, 'state' | 'fixSteps'>): string {
+  if (status.state === 'ready') return STATE_LABEL.ready;
+  if (agentNeedsUpdate(status)) return 'Update required';
+  return STATE_LABEL[status.state];
+}
+
 export function agentLabel(id: AgentId): string {
   return id === 'cursor' ? 'Cursor' : 'Claude Code';
 }
@@ -155,7 +167,7 @@ export function AgentPicker({
                 <span className="check">{isSelected && <Check size={16} />}</span>
                 <span className="menu-item-label">{b.label}</span>
                 <span className={`state ${ready ? 'ok' : 'warn'}`}>
-                  <StatusDot tone={ready ? 'ok' : 'warn'} /> {STATE_LABEL[b.state]}
+                  <StatusDot tone={ready ? 'ok' : 'warn'} /> {agentStateLabel(b)}
                 </span>
               </button>
               {!ready && !showFix && <div className="menu-item-hint">{b.fixSteps[0]?.text ?? 'Not available'} · show how</div>}

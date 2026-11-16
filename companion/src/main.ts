@@ -4,7 +4,7 @@ import { loadConfig } from './config.ts';
 import { startHost } from './host.ts';
 import { install, uninstall } from './install.ts';
 import { findClone, linkClone } from './repo.ts';
-import { pruneAll } from './worktree.ts';
+import { enforceRetention } from './worktree.ts';
 
 const [arg] = process.argv.slice(2);
 
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
     }
     case 'prune': {
       const config = loadConfig();
-      const removed = await pruneAll(config, (owner, repo) => findClone(config, owner, repo));
+      const removed = await enforceRetention(config, (owner, repo) => findClone(config, owner, repo));
       console.log(removed.length ? `Removed:\n${removed.join('\n')}` : 'No worktrees to remove.');
       break;
     }
@@ -50,7 +50,7 @@ Usage:
                                              --dev also allows the unpacked extension id
   quack-companion uninstall                  Remove the host registration
   quack-companion link [path] [owner/repo]   Map an existing local clone in ~/.quack/config.json
-  quack-companion prune                      Remove all Quack worktrees and their refs/pr-review refs
+  quack-companion prune                      Delete PR worktrees past retentionDays, then the oldest past maxWorktrees
   quack-companion doctor                     Print config and agent readiness
 
 The browser starts the companion itself; you never need to run it in a terminal.`);

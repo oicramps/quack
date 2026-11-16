@@ -29,7 +29,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 
 BUNDLE="${TMP_DIR}/quack-companion.cjs"
 echo "Downloading Quack companion from ${BASE}/quack-companion.cjs..."
-curl -fsSL "${BASE}/quack-companion.cjs" -o "$BUNDLE"
+curl --proto '=https' --proto-redir '=https' -fsSL "${BASE}/quack-companion.cjs" -o "$BUNDLE"
 
 if command -v shasum >/dev/null 2>&1; then
   SHA256="shasum -a 256"
@@ -40,7 +40,7 @@ else
   exit 1
 fi
 
-curl -fsSL "${BASE}/quack-companion.cjs.sha256" -o "${BUNDLE}.sha256"
+curl --proto '=https' --proto-redir '=https' -fsSL "${BASE}/quack-companion.cjs.sha256" -o "${BUNDLE}.sha256"
 EXPECTED=$(awk '{print $1}' "${BUNDLE}.sha256")
 ACTUAL=$($SHA256 "$BUNDLE" | awk '{print $1}')
 if [ "$EXPECTED" != "$ACTUAL" ]; then
