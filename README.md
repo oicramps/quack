@@ -38,6 +38,8 @@ npx quack-companion@latest install
 
 Restart your browser once, open any PR on `github.com`, and click the **Quack** toolbar icon.
 
+On macOS, install also compiles `~/.quack/bin/quack-menubar` when the Xcode Command Line Tools are present. A duck then stays in the menu bar while the side panel is open.
+
 ---
 
 ## Features
@@ -50,6 +52,7 @@ Restart your browser once, open any PR on `github.com`, and click the **Quack** 
 | **Switch agents mid-thread** | Ask follow-ups in the same session, or switch between **Cursor** and **Claude Code** without losing earlier turns. |
 | **Draft review comments** | Turn any answer into an editable Markdown review comment and jump straight to the GitHub diff line. |
 | **Commit sync detection** | Quack tracks the exact commit SHA behind each answer and offers **Re-ask on latest** when new commits land. |
+| **Menu bar status (macOS)** | While the side panel is open, a duck in the menu bar shows Connected, or the pull request and step while an ask is running. **Open Log** opens the companion log. |
 
 ---
 

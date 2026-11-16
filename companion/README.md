@@ -24,7 +24,7 @@ npx quack-companion@latest install
 
 ## How It Works
 
-Browser extensions are sandboxed and cannot run `git` or local CLIs directly. The browser starts `quack-companion` automatically when you open the Quack side panel and stops it as soon as the panel closes—no background daemon or open terminal needed.
+Browser extensions are sandboxed and cannot run `git` or local CLIs directly. The browser starts `quack-companion` automatically when you open the Quack side panel and stops it as soon as the panel closes—no background daemon or open terminal needed. On macOS, a duck stays in the menu bar for that same stretch. The menu shows Connected, or the pull request and current step while an ask is running, and **Open Log** opens the companion log.
 
 ```mermaid
 flowchart TD
@@ -43,6 +43,7 @@ flowchart TD
 | `<your-clone>/.git/refs/pr-review/<n>` | Stores fetched PR commits outside `refs/heads/*`. |
 | `~/.quack/worktrees/<owner>/<repo>/pr-<n>` | Isolated, detached git worktree where your AI agent reads the repo at the PR's exact commit. |
 | `~/.quack/bin/` | Stores `quack-companion` pinned to your Node binary so Chrome can launch it reliably. |
+| `~/.quack/bin/quack-menubar` | macOS menu bar helper, compiled at install when `swiftc` is available. The icon is removed when the side panel closes, and uninstall deletes the binary. |
 | `~/.quack/config.json` | Local scan directories and worktree retention settings. |
 
 ---
@@ -56,6 +57,7 @@ flowchart TD
 | **Local Clone** | A local git clone of the repository you are reviewing |
 | **AI Agent** | [Cursor CLI](https://cursor.com) (`agent` / `cursor-agent`) and/or [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`), signed in locally |
 | **GitHub CLI** *(optional)* | [`gh`](https://cli.github.com/), signed in, to unlock **Check CI** (failed job log triage & flake detection) |
+| **Menu bar icon** *(optional, macOS)* | Xcode Command Line Tools (`swiftc`), so install can compile the menu bar helper. Quack works without them. |
 
 ---
 
