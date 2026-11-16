@@ -68,7 +68,7 @@ Run via `npx quack-companion` or directly via `~/.quack/bin/quack-companion`:
 | `npx quack-companion@latest install` | Install or update the companion and register browser manifests |
 | `npx quack-companion link [path] [owner/repo]` | Map an existing local clone in `~/.quack/config.json` |
 | `npx quack-companion doctor` | Check config, scan roots, and local AI agent readiness |
-| `npx quack-companion prune` | Delete all cached PR worktrees and `refs/pr-review/*` refs |
+| `npx quack-companion prune` | Apply `retentionDays` and `maxWorktrees` under the worktree root |
 | `npx quack-companion uninstall` | Remove browser registrations and `~/.quack/bin` |
 | `npx quack-companion --version` | Print installed version |
 
@@ -103,6 +103,7 @@ Created automatically on first run at `~/.quack/config.json`:
 }
 ```
 
+- **`retentionDays` / `maxWorktrees`**: Applied on companion startup and by `prune`, only under `worktreeRoot`. A `pr-<n>` directory older than `retentionDays` is deleted, then the oldest remaining directories are deleted until `maxWorktrees` are left. The matching `refs/pr-review/<n>` ref is deleted when the clone is known. Clones and `scanRoots` are not removed.
 - **`scanRoots`**: Folders scanned (up to 2 levels deep) to match a local clone's `origin` remote URL to the open GitHub PR.
 - **`repoPaths`**: Explicit paths for repositories cloned outside `scanRoots`.
 - **Logs**: Timings and errors (never prompts or source code) are written to `~/.quack/logs/companion.log`.

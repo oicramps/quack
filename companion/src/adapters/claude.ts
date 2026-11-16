@@ -106,6 +106,15 @@ export function createClaudeParser(cwd: string): LineParser {
 
 const DENIED_TOOLS = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'WebFetch', 'WebSearch', 'Task', 'mcp__*'];
 
+/** Shown when this Claude build advertises neither project isolation nor a tool deny list. */
+export const CLAUDE_ISOLATION_HINT = 'This build does not advertise project-settings isolation.';
+
+/** Returns the ready-state hint when `claude --help` lacks `--restricted` and a disallowed-tools flag. */
+export function claudeIsolationHint(help: string): string | null {
+  if (help.includes('--restricted') || help.includes('--disallowedTools') || help.includes('--disallowed-tools')) return null;
+  return CLAUDE_ISOLATION_HINT;
+}
+
 /**
  * Flags that keep a PR's `.claude` settings, hooks, and MCP servers out of the
  * session, and that take shell, write, and network tools away on older CLIs
@@ -139,14 +148,19 @@ export const claudeAdapter: Adapter = {
         fixSteps: [{ text: 'Install Claude Code', command: 'curl -fsSL https://claude.ai/install.sh | bash' }, LOGIN, RECHECK],
       };
     }
-    const [version, isLoggedIn] = await Promise.all([run(bin, ['--version'], { timeoutMs: 15_000 }), loggedIn(bin)]);
+    const [version, isLoggedIn, help] = await Promise.all([
+      run(bin, ['--version'], { timeoutMs: 15_000 }),
+      loggedIn(bin),
+      run(bin, ['--help'], { timeoutMs: 15_000 }),
+    ]);
+    const hint = claudeIsolationHint(help.stdout + help.stderr);
     return {
       id: 'claude-code',
       label: 'Claude Code',
       state: isLoggedIn ? 'ready' : 'not_logged_in',
       version: version.stdout.trim(),
       models: MODELS,
-      fixSteps: isLoggedIn ? [] : [LOGIN, RECHECK],
+      fixSteps: isLoggedIn ? (hint ? [{ text: hint }] : []) : [LOGIN, RECHECK],
     };
   },
 

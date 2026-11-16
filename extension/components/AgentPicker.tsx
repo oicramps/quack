@@ -158,6 +158,7 @@ export function AgentPicker({
                   <StatusDot tone={ready ? 'ok' : 'warn'} /> {STATE_LABEL[b.state]}
                 </span>
               </button>
+              {ready && b.fixSteps[0]?.text && <div className="menu-item-hint">{b.fixSteps[0].text}</div>}
               {!ready && !showFix && <div className="menu-item-hint">{b.fixSteps[0]?.text ?? 'Not available'} · show how</div>}
               {showFix && (
                 <div className="menu-item-fix">

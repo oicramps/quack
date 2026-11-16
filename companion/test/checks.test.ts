@@ -20,14 +20,28 @@ test('only failing checks are kept, with the run and job taken from the link', (
 
 test('secrets in CI logs are masked, including on a second pass', () => {
   const token = `ghp_${'a'.repeat(36)}`;
-  const log = `password: supersecret\nexpected 204, got 403\nAuthorization: Bearer ${token}`;
+  const awsSecret = 'EXAMPLESECRETVALUEEXAMPLESECRETVALUE12';
+  const awsToken = 'EXAMPLESESSIONTOKENEXAMPLESESSIONTOKEN12';
+  const live = 'sk_live_EXAMPLEEXAMPLEEXAMPLE';
+  const testKey = 'sk_test_EXAMPLEEXAMPLEEXAMPLE';
+  const log = [
+    'password: supersecret',
+    'expected 204, got 403',
+    `Authorization: Bearer ${token}`,
+    `AWS_SECRET_ACCESS_KEY=${awsSecret}`,
+    `AWS_SESSION_TOKEN=${awsToken}`,
+    `charge ${live} and ${testKey} ok`,
+  ].join('\n');
   const once = redactSecrets(log);
   const twice = redactSecrets(once);
-  assert.equal(once.includes(token), false);
-  assert.equal(once.includes('supersecret'), false);
+  for (const secret of [token, 'supersecret', awsSecret, awsToken, live, testKey]) {
+    assert.equal(once.includes(secret), false, secret);
+  }
   assert.ok(once.includes('expected 204, got 403'));
+  assert.ok(once.includes('charge ') && once.includes(' ok'));
   assert.equal(twice, once);
   assert.equal(tailLog(`keep me\n${log}`, 10, 10_000).includes(token), false);
+  assert.equal(tailLog(`keep me\n${log}`, 10, 10_000).includes(awsSecret), false);
 });
 
 test('log tails keep the end, and recent failures ignore skips', () => {

@@ -12,7 +12,7 @@ import { contractHome } from '../src/paths.ts';
 import { findCloneWithDiagnostics, inspectWorkspace, linkClone, parseGitHubRemote, saveWorkspace } from '../src/repo.ts';
 import { fileAnchor } from '../src/selection.ts';
 import { ciCommentText, isOlderVersion, parseCiReport } from '@quack/shared';
-import { claudeGuardArgs } from '../src/adapters/claude.ts';
+import { claudeGuardArgs, claudeIsolationHint } from '../src/adapters/claude.ts';
 import { cursorAcpArgs } from '../src/adapters/cursor.ts';
 import { prDiff } from '../src/pr.ts';
 import { ValidationError, asCommitSha, isSafeRepoPath, validateMessage } from '../src/validate.ts';
@@ -112,6 +112,10 @@ test('agent guard flags follow what the installed CLI advertises', () => {
   assert.deepEqual(older.slice(0, 2), ['--setting-sources', 'user']);
   assert.ok(older.includes('Bash') && older.includes('mcp__*'));
   assert.deepEqual(claudeGuardArgs('nothing'), []);
+  assert.equal(claudeIsolationHint('nothing'), 'This build does not advertise project-settings isolation.');
+  assert.equal(claudeIsolationHint('--restricted'), null);
+  assert.equal(claudeIsolationHint('--disallowed-tools'), null);
+  assert.equal(claudeIsolationHint('--disallowedTools'), null);
   assert.deepEqual(cursorAcpArgs('--model <model>\n--mode <mode>\n--sandbox <mode>\n--skip-worktree-setup'), [
     '--sandbox',
     'enabled',

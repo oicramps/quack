@@ -40,10 +40,13 @@ const SECRET_PATTERNS: { pattern: RegExp; replacement: string }[] = [
   { pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, replacement: '[redacted]' },
   { pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}/g, replacement: '[redacted]' },
   { pattern: /\bsk-(?:live|test|proj|ant)-[A-Za-z0-9\-_]{10,}\b/g, replacement: '[redacted]' },
+  { pattern: /\bsk_(?:live|test)_[A-Za-z0-9]+\b/g, replacement: '[redacted]' },
   { pattern: /\bBearer\s+[A-Za-z0-9\-._~+/]+=*/gi, replacement: 'Bearer [redacted]' },
   { pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, replacement: '[redacted]' },
   {
-    pattern: /\b(api[_-]?key|secret|token|password|passwd|authorization)\b(\s*[=:]\s*)(?:"[^"]*"|'[^']*'|\S+)/gi,
+    // `_` is a word character, so a boundary around `secret` misses AWS_SECRET_ACCESS_KEY.
+    pattern:
+      /(?<![A-Za-z0-9])((?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|secret|token|password|passwd|authorization)(?:[_-][A-Za-z0-9]+)*)(\s*[=:]\s*)(?:"[^"]*"|'[^']*'|\S+)/gi,
     replacement: '$1$2[redacted]',
   },
 ];
