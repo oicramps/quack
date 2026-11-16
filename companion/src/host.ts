@@ -5,6 +5,7 @@ import { listFailingChecks } from './checks.ts';
 import { loadConfig } from './config.ts';
 import { MessageDecoder, encodeMessage } from './framing.ts';
 import { log } from './log.ts';
+import { MenuActivity, startMenuBar, type MenuStatus } from './menubar.ts';
 import { findClone, inspectWorkspace, saveWorkspace } from './repo.ts';
 import { handleAsk } from './session.ts';
 import { ValidationError, validateMessage } from './validate.ts';
@@ -31,12 +32,23 @@ export function startHost(origin: string | undefined): void {
     process.exit(1);
   }
   log('host started', QUACK_VERSION);
+  const bar = startMenuBar();
+  const activity = new MenuActivity();
+  const showMenu = (status: MenuStatus | null) => {
+    if (status) bar.update(status);
+  };
+  // Chrome can exit the host without a clean stdin end. The helper also watches our pid.
+  process.on('exit', () => bar.stop());
   const config = loadConfig();
   void enforceRetention(config, (owner, repo) => findClone(config, owner, repo)).catch((err: unknown) => {
     log('retention failed', err instanceof Error ? err.message : String(err));
   });
 
   const send = (message: CompanionMessage) => {
+    if (message.type === 'progress') showMenu(activity.progress(message.requestId, message.step));
+    else if (message.type === 'event' && (message.event.type === 'done' || message.event.type === 'error')) {
+      showMenu(activity.end(message.requestId));
+    }
     if (message.type === 'event' && message.event.type === 'text' && message.event.delta.length > MAX_TEXT_DELTA) {
       const { delta } = message.event;
       for (let i = 0; i < delta.length; i += MAX_TEXT_DELTA) {
@@ -95,6 +107,7 @@ export function startHost(origin: string | undefined): void {
       }
       case 'cancel':
         running.get(message.requestId)?.abort();
+        showMenu(activity.end(message.requestId));
         break;
       case 'close_session':
         adapters[message.agent].closeSession?.(message.sessionId);
@@ -134,6 +147,7 @@ export function startHost(origin: string | undefined): void {
           });
         break;
       case 'ask': {
+        showMenu(activity.begin(message.requestId, `${message.pr.owner}/${message.pr.repo}#${message.pr.number}`));
         const controller = new AbortController();
         running.set(message.requestId, controller);
         handleAsk(message, send, controller.signal, cachedStatus).finally(() => running.delete(message.requestId));
@@ -169,6 +183,7 @@ export function startHost(origin: string | undefined): void {
     log('port closed, stopping', running.size, 'request(s)');
     for (const c of running.values()) c.abort();
     for (const adapter of Object.values(adapters)) adapter.shutdown?.();
+    bar.stop();
     setTimeout(() => process.exit(0), 1500).unref();
   });
 }

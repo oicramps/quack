@@ -1,7 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, HOST_NAME } from '@quack/shared';
+import menuBarSwift from './menubar.swift';
 import { BIN_DIR, HOME } from './paths.ts';
 
 interface HostTarget {
@@ -84,6 +86,110 @@ export interface InstallOptions {
   platform?: NodeJS.Platform;
   home?: string;
   env?: NodeJS.ProcessEnv;
+  /** Test seam. Production install compiles with `swiftc` on macOS. */
+  compileMenuBar?: (source: string, outFile: string) => void;
+}
+
+/** `swiftc` is not installed. The companion still installs; the menu bar icon is skipped. */
+export class SwiftcMissingError extends Error {
+  constructor() {
+    super('swiftc not found');
+    this.name = 'SwiftcMissingError';
+  }
+}
+
+function isExecutable(file: string): boolean {
+  try {
+    fs.accessSync(file, fs.constants.X_OK);
+    return fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function developerDir(env: NodeJS.ProcessEnv): string | null {
+  try {
+    const dir = execFileSync('xcode-select', ['-p'], {
+      encoding: 'utf8',
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    return dir || null;
+  } catch {
+    return null;
+  }
+}
+
+function isEnoent(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && (err as { code?: unknown }).code === 'ENOENT';
+}
+
+function compilerMessage(err: unknown): string {
+  const stderr = err && typeof err === 'object' && 'stderr' in err ? String((err as { stderr?: unknown }).stderr ?? '') : '';
+  return stderr.trim() || (err instanceof Error ? err.message : String(err));
+}
+
+/**
+ * Locates `swiftc` via `xcrun -f swiftc`, then `/usr/bin/swiftc`.
+ * Returns null without invoking `xcrun` when no developer directory is selected,
+ * because that invocation opens the Command Line Tools install dialog.
+ * The returned path is the `/usr/bin/swiftc` trampoline when it exists: running the
+ * toolchain binary from `xcrun -f` skips SDK setup and cannot load the Swift stdlib.
+ */
+export function findSwiftc(env: NodeJS.ProcessEnv = process.env): string | null {
+  const selected = developerDir(env);
+  if (!selected) return null;
+  const swiftEnv = { ...env, DEVELOPER_DIR: selected };
+  let toolchain = '';
+  try {
+    toolchain = execFileSync('xcrun', ['-f', 'swiftc'], {
+      encoding: 'utf8',
+      env: swiftEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    toolchain = '';
+  }
+  // `/usr/bin/swiftc` is the xcrun trampoline. The toolchain path from `xcrun -f`
+  // compiles without the selected SDK and cannot load the Swift standard library.
+  if (isExecutable('/usr/bin/swiftc')) return '/usr/bin/swiftc';
+  return toolchain && isExecutable(toolchain) ? toolchain : null;
+}
+
+/** Compiles the menu bar helper. Throws `SwiftcMissingError` when the compiler is absent. */
+export function compileMenuBar(source: string, outFile: string, env: NodeJS.ProcessEnv = process.env): void {
+  const selected = developerDir(env);
+  if (!selected) throw new SwiftcMissingError();
+  const swiftEnv = { ...env, DEVELOPER_DIR: selected };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quack-menubar-'));
+  try {
+    const srcFile = path.join(dir, 'menubar.swift');
+    fs.writeFileSync(srcFile, source);
+    const flags = ['-O', '-framework', 'Cocoa', '-o', outFile, srcFile];
+    try {
+      try {
+        // xcrun selects the macOS SDK. The toolchain path from `xcrun -f swiftc` does not.
+        execFileSync('xcrun', ['swiftc', ...flags], {
+          encoding: 'utf8',
+          env: swiftEnv,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch (err) {
+        if (!isEnoent(err)) throw err;
+        execFileSync('/usr/bin/swiftc', flags, {
+          encoding: 'utf8',
+          env: swiftEnv,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      }
+    } catch (err) {
+      if (isEnoent(err)) throw new SwiftcMissingError();
+      throw new Error(compilerMessage(err));
+    }
+    fs.chmodSync(outFile, 0o755);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -106,6 +212,8 @@ export function install(bundlePath: string, opts: InstallOptions = {}): void {
   fs.writeFileSync(launcher, `#!/bin/sh\n${devFlag}exec "${process.execPath}" "${script}" "$@"\n`, { mode: 0o755 });
   fs.chmodSync(launcher, 0o755);
 
+  const menuBarNote = installMenuBar(binDir, opts);
+
   const ids = allowedIds(dev);
   const manifest = {
     name: HOST_NAME,
@@ -123,7 +231,24 @@ export function install(bundlePath: string, opts: InstallOptions = {}): void {
   console.log(`\nCompanion installed at ${launcher}`);
   console.log(`Node: ${process.execPath} (${process.version})`);
   console.log(`Extension IDs allowed: ${ids.join(', ')}`);
+  if (menuBarNote) console.log(menuBarNote);
   console.log('\nRestart the browser if the panel still says the companion is not connected.');
+}
+
+/** Compiles `quack-menubar` on macOS. A missing compiler does not fail install. */
+function installMenuBar(binDir: string, opts: InstallOptions): string {
+  if ((opts.platform ?? process.platform) !== 'darwin') return '';
+  const outFile = path.join(binDir, 'quack-menubar');
+  const compile = opts.compileMenuBar ?? ((source: string, out: string) => compileMenuBar(source, out, opts.env ?? process.env));
+  try {
+    compile(menuBarSwift, outFile);
+    return `Menu bar helper: ${outFile}`;
+  } catch (err) {
+    if (err instanceof SwiftcMissingError) {
+      return 'Menu bar helper skipped (swiftc not found). Install the Xcode Command Line Tools and run install again.';
+    }
+    return `Menu bar helper skipped: ${err instanceof Error ? err.message : String(err)}`;
+  }
 }
 
 export function uninstall(opts: Pick<InstallOptions, 'binDir' | 'platform' | 'home' | 'env'> = {}): void {
