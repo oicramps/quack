@@ -1,4 +1,4 @@
-import type { CodeSelection } from '@quack/shared';
+import type { CodeSelection } from '@quacksteps/shared';
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { createFloatingButton } from '../lib/askButton';
@@ -29,7 +29,7 @@ function keepKnown<T extends object>(fresh: T, known: T): T {
 }
 
 // Tracks PR metadata, diff selections, and theme on github.com and renders the
-// floating "Ask Quack" button in a closed Shadow DOM root.
+// floating "Ask Quacksteps" button in a closed Shadow DOM root.
 export default defineContentScript({
   // All of github.com, because GitHub navigates to PRs without a page load.
   matches: ['https://github.com/*'],

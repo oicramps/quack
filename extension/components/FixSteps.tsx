@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { FixStep } from '@quack/shared';
+import type { FixStep } from '@quacksteps/shared';
 import { Check, CopyIcon } from './icons';
 
 export function FixSteps({ steps }: { steps: FixStep[] }) {

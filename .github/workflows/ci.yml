@@ -24,4 +24,4 @@ jobs:
       - run: yarn test
       - run: yarn typecheck
       - run: yarn workspace quack-companion build
-      - run: yarn workspace @quack/extension zip
+      - run: yarn workspace @quacksteps/extension zip

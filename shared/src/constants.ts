@@ -29,9 +29,9 @@ export const EXTENSION_PUBLIC_KEY =
 export const AGENT_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Public GitHub repository whose Releases serve `install.sh` and `quack-companion.cjs`. */
-export const COMPANION_REPO = 'oicramps/quack';
+export const COMPANION_REPO = 'oicramps/quacksteps';
 
-export const CHROME_STORE_URL = `https://chromewebstore.google.com/detail/quack/${STORE_EXTENSION_ID}`;
+export const CHROME_STORE_URL = `https://chromewebstore.google.com/detail/quacksteps/${STORE_EXTENSION_ID}`;
 
 export const INSTALL_COMMAND = 'npx quack-companion@latest install';
 

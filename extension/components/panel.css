@@ -271,8 +271,8 @@ select:focus {
 .art .backdrop {
   fill: var(--quack-backdrop);
 }
-body[data-theme='dark'] .quack-logo.on-light,
-body:not([data-theme='dark']) .quack-logo.on-dark {
+body[data-theme='dark'] .quacksteps-logo.on-light,
+body:not([data-theme='dark']) .quacksteps-logo.on-dark {
   display: none;
 }
 .status-icon {

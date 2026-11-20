@@ -8,9 +8,9 @@ import { prepareWorktree, unlinkEscapingSymlinks } from '../src/worktree.ts';
 
 const gitEnv = {
   ...process.env,
-  GIT_AUTHOR_NAME: 'Quack Test',
+  GIT_AUTHOR_NAME: 'Quacksteps Test',
   GIT_AUTHOR_EMAIL: 'test@example.com',
-  GIT_COMMITTER_NAME: 'Quack Test',
+  GIT_COMMITTER_NAME: 'Quacksteps Test',
   GIT_COMMITTER_EMAIL: 'test@example.com',
   GIT_CONFIG_NOSYSTEM: '1',
 };
@@ -30,7 +30,7 @@ test('checking out a PR worktree does not run its post-checkout hook', async () 
     fs.mkdirSync(path.join(repo, '.husky'));
     fs.writeFileSync(path.join(repo, '.husky', 'post-checkout'), `#!/bin/sh\necho ran >> "${marker}"\n`, { mode: 0o755 });
     git(repo, ['config', 'user.email', 'test@example.com']);
-    git(repo, ['config', 'user.name', 'Quack Test']);
+    git(repo, ['config', 'user.name', 'Quacksteps Test']);
     git(repo, ['config', 'core.hooksPath', '.husky']);
     git(repo, ['add', '.husky']);
     git(repo, ['commit', '-q', '-m', 'base']);
@@ -63,7 +63,7 @@ test('symlinks that resolve outside the worktree are removed', async () => {
     fs.symlinkSync(path.join(root, 'secret'), path.join(repo, 'sneak'));
     git(repo, ['init', '-q', '-b', 'main']);
     git(repo, ['config', 'user.email', 'test@example.com']);
-    git(repo, ['config', 'user.name', 'Quack Test']);
+    git(repo, ['config', 'user.name', 'Quacksteps Test']);
     git(repo, ['add', '--', 'readme', 'inside', 'docs/up', 'outside', 'sneak']);
     git(repo, ['commit', '-q', '-m', 'links']);
 

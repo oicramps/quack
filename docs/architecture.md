@@ -1,11 +1,11 @@
 # Architecture
 
-Quack is split into three TypeScript workspaces so the browser UI and local OS operations stay cleanly separated:
+Quacksteps is split into three TypeScript workspaces so the browser UI and local OS operations stay cleanly separated:
 
 | Workspace | Path | Responsibility |
 | --- | --- | --- |
-| `@quack/shared` | `shared/` | Wire protocol types, shared constants, and the `quack-ci` JSON report parser |
-| `@quack/extension` | `extension/` | Content script (`github.com`), background native-port multiplexer, and React side panel |
+| `@quacksteps/shared` | `shared/` | Wire protocol types, shared constants, and the `quack-ci` JSON report parser |
+| `@quacksteps/extension` | `extension/` | Content script (`github.com`), background native-port multiplexer, and React side panel |
 | `quack-companion` | `companion/` | Local Node.js native messaging host: clone lookup, git worktrees, `gh` CI logs, and AI CLI adapters |
 
 ---

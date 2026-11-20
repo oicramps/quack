@@ -1,6 +1,6 @@
 import type { Browser } from 'wxt/browser';
 import { browser } from 'wxt/browser';
-import type { CompanionMessage, ExtensionMessage } from '@quack/shared';
+import type { CompanionMessage, ExtensionMessage } from '@quacksteps/shared';
 import type { FromBackground, ToBackground } from './messages';
 
 type Listener = (message: CompanionMessage) => void;

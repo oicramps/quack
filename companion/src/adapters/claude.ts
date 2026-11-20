@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AgentStatus, FixStep } from '@quack/shared';
+import type { AgentStatus, FixStep } from '@quacksteps/shared';
 import { findBinary, run } from '../exec.ts';
 import { HOME } from '../paths.ts';
 import { clip, relativeTo, runJsonLines, stripAnsi } from './stream.ts';
@@ -106,8 +106,8 @@ export function createClaudeParser(cwd: string): LineParser {
 
 const DENIED_TOOLS = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'WebFetch', 'WebSearch', 'Task', 'mcp__*'];
 
-/** Shown when this Claude build does not advertise `--restricted`. Quack will not start it. */
-export const CLAUDE_UPDATE_TEXT = 'Update Claude Code. This version cannot confine a pull request, so Quack will not start it.';
+/** Shown when this Claude build does not advertise `--restricted`. Quacksteps will not start it. */
+export const CLAUDE_UPDATE_TEXT = 'Update Claude Code. This version cannot confine a pull request, so Quacksteps will not start it.';
 
 /** True when `claude --help` does not advertise `--restricted`. A tool deny list is not enough. */
 export function claudeRequiresUpdate(help: string): boolean {

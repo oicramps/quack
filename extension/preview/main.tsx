@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import type { AgentEvent, AgentStatus, CompanionMessage, ExtensionMessage, ProgressStep, WorkspaceStatus } from '@quack/shared';
-import { PROTOCOL_VERSION, QUACK_VERSION } from '@quack/shared';
+import type { AgentEvent, AgentStatus, CompanionMessage, ExtensionMessage, ProgressStep, WorkspaceStatus } from '@quacksteps/shared';
+import { PROTOCOL_VERSION, QUACK_VERSION } from '@quacksteps/shared';
 import '../components/panel.css';
 import { Panel } from '../components/Panel';
 import type { CompanionClient } from '../lib/client';
@@ -26,7 +26,7 @@ const agents: AgentStatus[] = [
         version: '2025.01.01',
         models: [],
         fixSteps: [
-          { text: 'Update the Cursor CLI. This version cannot sandbox a pull request, so Quack will not start it.', command: 'cursor-agent update' },
+          { text: 'Update the Cursor CLI. This version cannot sandbox a pull request, so Quacksteps will not start it.', command: 'cursor-agent update' },
           { text: 'Then press Re-check.' },
         ],
       }

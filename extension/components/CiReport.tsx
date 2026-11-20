@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { CheckRun } from '@quack/shared';
-import { type CiFinding, parseCiReport } from '@quack/shared';
+import type { CheckRun } from '@quacksteps/shared';
+import { type CiFinding, parseCiReport } from '@quacksteps/shared';
 import { StatusIcon } from './brand';
 import { type RepoLink, Markdown } from './Markdown';
 

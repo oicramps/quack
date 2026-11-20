@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { CodeSelection } from '@quack/shared';
+import type { CodeSelection } from '@quacksteps/shared';
 import { runGit } from './exec.ts';
 import { log } from './log.ts';
 import { asCommitSha, isSafeRepoPath } from './validate.ts';

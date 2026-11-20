@@ -1,6 +1,6 @@
 import Cocoa
 
-/// Menu bar status item for the Quack companion.
+/// Menu bar status item for the Quacksteps companion.
 ///
 /// Stdin is newline-delimited JSON: `{"title":"Connected"}` or
 /// `{"title":"acme/widgets#41","subtitle":"Fetching PR","count":"2 requests"}`.
@@ -28,7 +28,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     let menu = NSMenu()
     menu.autoenablesItems = false
 
-    let titleItem = NSMenuItem(title: "Quack", action: nil, keyEquivalent: "")
+    let titleItem = NSMenuItem(title: "Quacksteps", action: nil, keyEquivalent: "")
     titleItem.isEnabled = false
     countItem.isEnabled = false
     countItem.isHidden = true
@@ -48,12 +48,12 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     statusItem.menu = menu
 
     if let button = statusItem.button {
-      let image = MenuBarController.duckImage()
+      let image = MenuBarController.logoImage()
       image.isTemplate = true
       button.image = image
       button.imagePosition = .imageOnly
       button.toolTip = "Connected"
-      button.setAccessibilityLabel("Quack")
+      button.setAccessibilityLabel("Quacksteps")
     }
 
     watchParent()
@@ -147,9 +147,9 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
     NSApp.terminate(nil)
   }
 
-  /// The logo mark, traced from the 36×24 brand artwork: brackets around the duck.
+  /// The logo mark, traced from the 36×24 brand artwork: braces around a duck footprint.
   /// Template images follow the menu bar's light and dark appearance.
-  private static func duckImage() -> NSImage {
+  private static func logoImage() -> NSImage {
     let size = NSSize(width: 27, height: 18)
     let image = NSImage(size: size, flipped: true) { rect in
       let scale = min(rect.width / 36, rect.height / 24)
@@ -159,7 +159,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
       func paint(_ path: NSBezierPath, stroke: Bool) {
         path.transform(using: transform)
         if stroke {
-          path.lineWidth = 2.2 * scale
+          path.lineWidth = 2.4 * scale
           path.lineCapStyle = .round
           path.lineJoinStyle = .round
           path.stroke()
@@ -168,32 +168,33 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         }
       }
 
-      let body = NSBezierPath()
-      body.move(to: NSPoint(x: 10.8, y: 13.2))
-      body.curve(to: NSPoint(x: 18.1, y: 20.2), controlPoint1: NSPoint(x: 10.4, y: 17.7), controlPoint2: NSPoint(x: 13.3, y: 20.2))
-      body.curve(to: NSPoint(x: 26.9, y: 12.6), controlPoint1: NSPoint(x: 23.3, y: 20.2), controlPoint2: NSPoint(x: 26.5, y: 17.5))
-      body.curve(to: NSPoint(x: 25.1, y: 11.4), controlPoint1: NSPoint(x: 27, y: 11.1), controlPoint2: NSPoint(x: 26.2, y: 10.5))
-      body.curve(to: NSPoint(x: 19.4, y: 12.6), controlPoint1: NSPoint(x: 23.5, y: 12.8), controlPoint2: NSPoint(x: 21.5, y: 13.2))
-      body.curve(to: NSPoint(x: 17.9, y: 11.6), controlPoint1: NSPoint(x: 18.7, y: 12.4), controlPoint2: NSPoint(x: 18.2, y: 12.1))
-      body.line(to: NSPoint(x: 14, y: 11.8))
-      body.curve(to: NSPoint(x: 10.8, y: 13.2), controlPoint1: NSPoint(x: 12.4, y: 12), controlPoint2: NSPoint(x: 11.2, y: 12.4))
-      body.close()
-      paint(body, stroke: false)
-
-      paint(NSBezierPath(ovalIn: NSRect(x: 11.3, y: 3.9, width: 8.6, height: 8.6)), stroke: false)
-
-      let beak = NSBezierPath()
-      beak.move(to: NSPoint(x: 12.4, y: 7.4))
-      beak.curve(to: NSPoint(x: 8.6, y: 9.1), controlPoint1: NSPoint(x: 10.9, y: 7.2), controlPoint2: NSPoint(x: 9.3, y: 7.8))
-      beak.curve(to: NSPoint(x: 12.9, y: 10.6), controlPoint1: NSPoint(x: 9.4, y: 10.4), controlPoint2: NSPoint(x: 11.3, y: 10.9))
-      beak.close()
-      paint(beak, stroke: false)
-
-      if let context = NSGraphicsContext.current {
-        context.compositingOperation = .destinationOut
-        paint(NSBezierPath(ovalIn: NSRect(x: 15.7, y: 6.2, width: 2, height: 2)), stroke: false)
-        context.compositingOperation = .sourceOver
+      // Quadratic segment as a cubic, since NSBezierPath's quadratic API needs macOS 14.
+      func quad(_ path: NSBezierPath, to end: NSPoint, control c: NSPoint) {
+        let start = path.currentPoint
+        path.curve(
+          to: end,
+          controlPoint1: NSPoint(x: start.x + 2 / 3 * (c.x - start.x), y: start.y + 2 / 3 * (c.y - start.y)),
+          controlPoint2: NSPoint(x: end.x + 2 / 3 * (c.x - end.x), y: end.y + 2 / 3 * (c.y - end.y)))
       }
+
+      // The footprint is filled solid (no webbing), tilted 12° counterclockwise about the centre.
+      let foot = NSBezierPath()
+      foot.move(to: NSPoint(x: 18, y: 21.4))
+      quad(foot, to: NSPoint(x: 16, y: 20), control: NSPoint(x: 16.6, y: 21.4))
+      foot.line(to: NSPoint(x: 10.6, y: 8.8))
+      quad(foot, to: NSPoint(x: 12, y: 6.8), control: NSPoint(x: 9.9, y: 6.6))
+      quad(foot, to: NSPoint(x: 16.8, y: 4.2), control: NSPoint(x: 15.3, y: 10.6))
+      quad(foot, to: NSPoint(x: 19.2, y: 4.2), control: NSPoint(x: 18, y: 1.8))
+      quad(foot, to: NSPoint(x: 24, y: 6.8), control: NSPoint(x: 20.7, y: 10.6))
+      quad(foot, to: NSPoint(x: 25.4, y: 8.8), control: NSPoint(x: 26.1, y: 6.6))
+      foot.line(to: NSPoint(x: 20, y: 20))
+      quad(foot, to: NSPoint(x: 18, y: 21.4), control: NSPoint(x: 19.4, y: 21.4))
+      foot.close()
+      var tilt = AffineTransform(translationByX: 18, byY: 12)
+      tilt.rotate(byDegrees: -12)
+      tilt.translate(x: -18, y: -12)
+      foot.transform(using: tilt)
+      paint(foot, stroke: false)
 
       let left = NSBezierPath()
       left.move(to: NSPoint(x: 7, y: 3))

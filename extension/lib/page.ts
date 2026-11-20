@@ -1,4 +1,4 @@
-import type { CodeSelection, PrRef } from '@quack/shared';
+import type { CodeSelection, PrRef } from '@quacksteps/shared';
 
 /** Counts read from the PR page when GitHub shows them. */
 export interface PrStats {

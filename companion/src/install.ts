@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, HOST_NAME } from '@quack/shared';
+import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, HOST_NAME } from '@quacksteps/shared';
 import menuBarSwift from './menubar.swift';
 import { BIN_DIR, HOME } from './paths.ts';
 
@@ -40,12 +40,12 @@ function configBaseDir(platform: NodeJS.Platform, home: string, env: NodeJS.Proc
     const xdg = env.XDG_CONFIG_HOME?.trim();
     return xdg && path.isAbsolute(xdg) ? xdg : path.join(home, '.config');
   }
-  throw new Error(`Unsupported platform: ${platform}. Quack supports macOS and Linux.`);
+  throw new Error(`Unsupported platform: ${platform}. Quacksteps supports macOS and Linux.`);
 }
 
 function resolveTargets(platform: NodeJS.Platform, home: string, env: NodeJS.ProcessEnv): { dir: string; primary: boolean }[] {
   const targets = HOST_DIRS[platform as 'darwin' | 'linux'];
-  if (!targets) throw new Error(`Unsupported platform: ${platform}. Quack supports macOS and Linux.`);
+  if (!targets) throw new Error(`Unsupported platform: ${platform}. Quacksteps supports macOS and Linux.`);
   const base = configBaseDir(platform, home, env);
   return targets.map(({ segments, primary }) => ({
     dir: path.join(base, ...segments, 'NativeMessagingHosts'),
@@ -217,7 +217,7 @@ export function install(bundlePath: string, opts: InstallOptions = {}): void {
   const ids = allowedIds(dev);
   const manifest = {
     name: HOST_NAME,
-    description: 'Quack companion: runs AI agents against PR worktrees',
+    description: 'Quacksteps companion: runs AI agents against PR worktrees',
     path: launcher,
     type: 'stdio',
     allowed_origins: ids.map((id) => `chrome-extension://${id}/`),

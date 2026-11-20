@@ -11,7 +11,7 @@ import { hasConfigFile } from '../src/config.ts';
 import { contractHome } from '../src/paths.ts';
 import { findCloneWithDiagnostics, inspectWorkspace, linkClone, parseGitHubRemote, saveWorkspace } from '../src/repo.ts';
 import { fileAnchor } from '../src/selection.ts';
-import { ciCommentText, isOlderVersion, parseCiReport } from '@quack/shared';
+import { ciCommentText, isOlderVersion, parseCiReport } from '@quacksteps/shared';
 import { claudeGuardArgs, claudeRequiresUpdate } from '../src/adapters/claude.ts';
 import { cursorAcpArgs, cursorSandboxAdvertised } from '../src/adapters/cursor.ts';
 import { agentEnv } from '../src/exec.ts';
@@ -84,7 +84,7 @@ test('install registers installed browsers without creating unused channel dirs,
   }
 });
 
-test('only the Quack extension origin is accepted', () => {
+test('only the Quacksteps extension origin is accepted', () => {
   assert.ok(isAllowedOrigin('chrome-extension://hkdgklakkcffcmegdagdoigpaefhlipj/'));
   assert.ok(!isAllowedOrigin('chrome-extension://ikkjkdmcnmifldjmajjjgabanjomhikf/'));
   assert.ok(isAllowedOrigin('chrome-extension://ikkjkdmcnmifldjmajjjgabanjomhikf/', true));

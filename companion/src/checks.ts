@@ -1,4 +1,4 @@
-import type { CheckRun, PrRef } from '@quack/shared';
+import type { CheckRun, PrRef } from '@quacksteps/shared';
 import { findBinary, run } from './exec.ts';
 import { log } from './log.ts';
 import { isSafeBranch } from './validate.ts';

@@ -1,4 +1,4 @@
-import type { AgentId } from '@quack/shared';
+import type { AgentId } from '@quacksteps/shared';
 import { claudeAdapter } from './claude.ts';
 import { cursorAdapter } from './cursor.ts';
 import type { Adapter } from './types.ts';

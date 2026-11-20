@@ -1,4 +1,4 @@
-import type { CodeSelection, CompanionMessage, ExtensionMessage } from '@quack/shared';
+import type { CodeSelection, CompanionMessage, ExtensionMessage } from '@quacksteps/shared';
 import type { PageContext } from './page';
 
 /** Side panel -> background, over the panel's port. */
@@ -21,5 +21,5 @@ export type RuntimeMessage =
   | { kind: 'page-context'; context: PageContext }
   | { kind: 'attach'; tabId: number; selection: CodeSelection | null }
   | { kind: 'panel-ready' }
-  /** The in-page "Ask Quack" button was clicked; opens the side panel with the selection. */
+  /** The in-page "Ask Quacksteps" button was clicked; opens the side panel with the selection. */
   | { kind: 'ask-selection'; selection: CodeSelection };

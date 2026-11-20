@@ -1,5 +1,5 @@
 #!/bin/sh
-# Downloads the Quack companion from GitHub Releases and registers its native
+# Downloads the Quacksteps companion from GitHub Releases and registers its native
 # messaging host for Chrome, Edge, Brave, and Chromium. No npm registry or repo clone
 # required — only Node 20+ and curl.
 set -eu
@@ -28,7 +28,7 @@ TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/quack-install.XXXXXX")
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 
 BUNDLE="${TMP_DIR}/quack-companion.cjs"
-echo "Downloading Quack companion from ${BASE}/quack-companion.cjs..."
+echo "Downloading Quacksteps companion from ${BASE}/quack-companion.cjs..."
 curl --proto '=https' --proto-redir '=https' -fsSL "${BASE}/quack-companion.cjs" -o "$BUNDLE"
 
 if command -v shasum >/dev/null 2>&1; then
