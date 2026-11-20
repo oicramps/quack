@@ -1,4 +1,4 @@
-import type { CodeSelection, PrRef } from '@quack/shared';
+import type { CodeSelection, PrRef } from '@quacksteps/shared';
 import type { PrStats } from './page';
 
 /** Reads owner, repo, PR number and, when the URL pins one, the viewed head commit. */

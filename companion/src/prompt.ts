@@ -1,4 +1,4 @@
-import type { CodeSelection, HistoryTurn } from '@quack/shared';
+import type { CodeSelection, HistoryTurn } from '@quacksteps/shared';
 import { redactSecrets } from './checks.ts';
 
 export interface PromptInput {

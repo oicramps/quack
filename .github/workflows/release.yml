@@ -40,15 +40,15 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-          # Sync package.json versions (and internal @quack/* deps) if someone bumped QUACK_VERSION alone
+          # Sync package.json versions (and internal @quacksteps/* deps) if someone bumped QUACK_VERSION alone
           node -e '
             const fs = require("fs");
             const v = process.argv[1];
             for (const p of ["package.json", "shared/package.json", "companion/package.json", "extension/package.json"]) {
               const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
               pkg.version = v;
-              if (pkg.dependencies?.["@quack/shared"]) pkg.dependencies["@quack/shared"] = v;
-              if (pkg.devDependencies?.["@quack/shared"]) pkg.devDependencies["@quack/shared"] = v;
+              if (pkg.dependencies?.["@quacksteps/shared"]) pkg.dependencies["@quacksteps/shared"] = v;
+              if (pkg.devDependencies?.["@quacksteps/shared"]) pkg.devDependencies["@quacksteps/shared"] = v;
               fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
             }
           ' "$VERSION"
@@ -90,10 +90,10 @@ jobs:
       - name: Build extension zips
         if: steps.check.outputs.should_release == 'true'
         run: |
-          yarn workspace @quack/extension zip
-          yarn workspace @quack/extension zip -b edge
-          cp extension/.output/store/quackextension-*-chrome.zip release/
-          cp extension/.output/store/quackextension-*-edge.zip release/
+          yarn workspace @quacksteps/extension zip
+          yarn workspace @quacksteps/extension zip -b edge
+          cp extension/.output/store/quackstepsextension-*-chrome.zip release/
+          cp extension/.output/store/quackstepsextension-*-edge.zip release/
 
       - if: steps.check.outputs.should_release == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -240,7 +240,7 @@ jobs:
           # `wxt submit` is the Chrome Web Store client. It has no "already uploaded"
           # flag, so a repeat of the same version (or a review still pending) is a skip.
           set +e
-          output=$(yarn wxt submit --chrome-zip ../release/quackextension-*-chrome.zip 2>&1)
+          output=$(yarn wxt submit --chrome-zip ../release/quackstepsextension-*-chrome.zip 2>&1)
           status=$?
           set -e
           printf '%s\n' "$output"
@@ -278,4 +278,4 @@ jobs:
             echo "Edge Add-ons secrets not configured; skipping store submission."
             exit 0
           fi
-          yarn wxt submit --edge-zip ../release/quackextension-*-edge.zip
+          yarn wxt submit --edge-zip ../release/quackstepsextension-*-edge.zip

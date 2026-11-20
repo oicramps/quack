@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AgentStatus, FixStep } from '@quack/shared';
+import type { AgentStatus, FixStep } from '@quacksteps/shared';
 import { findBinary, run } from '../exec.ts';
 import { log } from '../log.ts';
 import { QUACK_DIR } from '../paths.ts';
@@ -18,14 +18,14 @@ interface Cli {
   bin: string;
   name: string;
   version: string;
-  /** Can run as an Agent Client Protocol server (`<bin> acp`), which Quack requires. */
+  /** Can run as an Agent Client Protocol server (`<bin> acp`), which Quacksteps requires. */
   acp: boolean;
   /** `acp` argv, with sandbox and ask mode when this CLI advertises them. */
   spawnArgs: string[];
 }
 
-/** Shown when this Cursor CLI does not advertise `--sandbox`. Quack will not start it. */
-export const CURSOR_UPDATE_TEXT = 'Update the Cursor CLI. This version cannot sandbox a pull request, so Quack will not start it.';
+/** Shown when this Cursor CLI does not advertise `--sandbox`. Quacksteps will not start it. */
+export const CURSOR_UPDATE_TEXT = 'Update the Cursor CLI. This version cannot sandbox a pull request, so Quacksteps will not start it.';
 
 /** True when help text from the top-level CLI or `acp --help` advertises `--sandbox`. */
 export function cursorSandboxAdvertised(help: string): boolean {
@@ -125,7 +125,7 @@ export const cursorAdapter: Adapter = {
         state: 'not_installed',
         version: cli.version,
         models: [],
-        fixSteps: [{ text: `Cursor CLI ${cli.version} is too old for Quack. Update it`, command: `${cli.name} update` }, RECHECK],
+        fixSteps: [{ text: `Cursor CLI ${cli.version} is too old for Quacksteps. Update it`, command: `${cli.name} update` }, RECHECK],
       };
     }
     if (!cursorSandboxAdvertised(cli.spawnArgs.join('\n'))) {
@@ -155,7 +155,7 @@ export const cursorAdapter: Adapter = {
   async *ask(opts: AskOpts) {
     const cli = await findCli();
     if (!cli?.acp) {
-      yield { type: 'error', message: cli ? 'This Cursor CLI is too old for Quack. Update it and try again.' : 'Cursor CLI not found.' };
+      yield { type: 'error', message: cli ? 'This Cursor CLI is too old for Quacksteps. Update it and try again.' : 'Cursor CLI not found.' };
       return;
     }
     if (!cursorSandboxAdvertised(cli.spawnArgs.join('\n'))) {

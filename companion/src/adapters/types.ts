@@ -1,4 +1,4 @@
-import type { AgentId, AgentStatus } from '@quack/shared';
+import type { AgentId, AgentStatus } from '@quacksteps/shared';
 
 export interface AskOpts {
   cwd: string;

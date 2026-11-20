@@ -1,4 +1,4 @@
-import type { AskRequest, AgentId, CodeSelection, ExtensionMessage, HistoryTurn, PrRef, WorkspacePrTarget } from '@quack/shared';
+import type { AskRequest, AgentId, CodeSelection, ExtensionMessage, HistoryTurn, PrRef, WorkspacePrTarget } from '@quacksteps/shared';
 
 const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const REPO = /^[A-Za-z0-9._-]{1,100}$/;

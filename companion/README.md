@@ -1,22 +1,22 @@
 # quack-companion
 
-Local native messaging host for **[Quack](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)** — the Chrome, Edge, and Brave extension that lets you ask your local **Claude Code** or **Cursor** about any GitHub pull request with full repository context, without stashing work or switching branches.
+Local native messaging host for **[Quacksteps](https://chromewebstore.google.com/detail/quacksteps/hkdgklakkcffcmegdagdoigpaefhlipj)** — the Chrome, Edge, and Brave extension that lets you ask your local **Claude Code** or **Cursor** about any GitHub pull request with full repository context, without stashing work or switching branches.
 
-- **Install Extension**: [Quack on Chrome Web Store](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)
-- **Source & Docs**: [github.com/oicramps/quack](https://github.com/oicramps/quack)
+- **Install Extension**: [Quacksteps on Chrome Web Store](https://chromewebstore.google.com/detail/quacksteps/hkdgklakkcffcmegdagdoigpaefhlipj)
+- **Source & Docs**: [github.com/oicramps/quacksteps](https://github.com/oicramps/quacksteps)
 
 ---
 
 ## Quick Start
 
-1. Install the **[Quack extension](https://chromewebstore.google.com/detail/quack/hkdgklakkcffcmegdagdoigpaefhlipj)** in Chrome, Edge, or Brave. Brave installs that same Chrome Web Store listing.
+1. Install the **[Quacksteps extension](https://chromewebstore.google.com/detail/quacksteps/hkdgklakkcffcmegdagdoigpaefhlipj)** in Chrome, Edge, or Brave. Brave installs that same Chrome Web Store listing.
 2. Register the local companion once in your terminal:
 
 ```sh
 npx quack-companion@latest install
 ```
 
-*(Alternatives: `yarn dlx quack-companion@latest install`, or without a package manager via `curl -fsSL https://github.com/oicramps/quack/releases/latest/download/install.sh | sh`.)*
+*(Alternatives: `yarn dlx quack-companion@latest install`, or without a package manager via `curl -fsSL https://github.com/oicramps/quacksteps/releases/latest/download/install.sh | sh`.)*
 
 3. Restart your browser once, then open any pull request on `github.com`.
 
@@ -24,11 +24,11 @@ npx quack-companion@latest install
 
 ## How It Works
 
-Browser extensions are sandboxed and cannot run `git` or local CLIs directly. The browser starts `quack-companion` automatically when you open the Quack side panel and stops it as soon as the panel closes—no background daemon or open terminal needed. On macOS, a duck stays in the menu bar for that same stretch. The menu shows Connected, or the pull request and current step while an ask is running, and **Open Log** opens the companion log.
+Browser extensions are sandboxed and cannot run `git` or local CLIs directly. The browser starts `quack-companion` automatically when you open the Quacksteps side panel and stops it as soon as the panel closes—no background daemon or open terminal needed. On macOS, a duck stays in the menu bar for that same stretch. The menu shows Connected, or the pull request and current step while an ask is running, and **Open Log** opens the companion log.
 
 ```mermaid
 flowchart TD
-  GH["GitHub PR page<br/>diff and selected lines"] --> EXT["Quack side panel"]
+  GH["GitHub PR page<br/>diff and selected lines"] --> EXT["Quacksteps side panel"]
   EXT -->|"Chrome Native Messaging"| HOST["quack-companion<br/>started on demand"]
   HOST -->|"1. Fetch the PR commit<br/>into refs/pr-review"| CLONE["Your local clone<br/>working tree stays untouched"]
   HOST -->|"2. Check out a detached worktree"| WT["~/.quack/worktrees"]
@@ -57,7 +57,7 @@ flowchart TD
 | **Local Clone** | A local git clone of the repository you are reviewing |
 | **AI Agent** | [Cursor CLI](https://cursor.com) (`agent` / `cursor-agent`) and/or [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`), signed in locally |
 | **GitHub CLI** *(optional)* | [`gh`](https://cli.github.com/), signed in, to unlock **Check CI** (failed job log triage & flake detection) |
-| **Menu bar icon** *(optional, macOS)* | Xcode Command Line Tools (`swiftc`), so install can compile the menu bar helper. Quack works without them. |
+| **Menu bar icon** *(optional, macOS)* | Xcode Command Line Tools (`swiftc`), so install can compile the menu bar helper. Quacksteps works without them. |
 
 ---
 

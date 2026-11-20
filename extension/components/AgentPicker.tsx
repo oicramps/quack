@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import type { AgentId, AgentState, AgentStatus } from '@quack/shared';
+import type { AgentId, AgentState, AgentStatus } from '@quacksteps/shared';
 import { FixSteps } from './FixSteps';
 import { Check, ChevronDown, Search } from './icons';
 

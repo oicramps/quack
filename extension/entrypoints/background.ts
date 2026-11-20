@@ -1,8 +1,8 @@
 import type { Browser } from 'wxt/browser';
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
-import type { CodeSelection, CompanionMessage, ExtensionMessage } from '@quack/shared';
-import { HOST_NAME } from '@quack/shared';
+import type { CodeSelection, CompanionMessage, ExtensionMessage } from '@quacksteps/shared';
+import { HOST_NAME } from '@quacksteps/shared';
 import type { FromBackground, RuntimeMessage, TabRequest, ToBackground } from '../lib/messages';
 
 type Port = Browser.runtime.Port;
@@ -11,7 +11,7 @@ export default defineBackground(() => {
   // The toolbar icon opens Chrome's side panel.
   browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
-  // Cmd/Ctrl+Shift+K and the in-page "Ask Quack" button open the panel and attach
+  // Cmd/Ctrl+Shift+K and the in-page "Ask Quacksteps" button open the panel and attach
   // the selected diff lines. sidePanel.open needs the user gesture, so it is
   // called before anything asynchronous.
   let pendingAttach: { tabId: number; selection: CodeSelection | null } | null = null;

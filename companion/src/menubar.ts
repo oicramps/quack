@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ProgressStep } from '@quack/shared';
-import { PROGRESS_LABELS } from '@quack/shared';
+import type { ProgressStep } from '@quacksteps/shared';
+import { PROGRESS_LABELS } from '@quacksteps/shared';
 import { childEnv } from './exec.ts';
 import { log as logLine } from './log.ts';
 import { BIN_DIR, LOG_FILE } from './paths.ts';

@@ -1,5 +1,5 @@
-import type { AgentId, AgentStatus, CompanionMessage, ExtensionMessage } from '@quack/shared';
-import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, PROTOCOL_VERSION, QUACK_VERSION } from '@quack/shared';
+import type { AgentId, AgentStatus, CompanionMessage, ExtensionMessage } from '@quacksteps/shared';
+import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, PROTOCOL_VERSION, QUACK_VERSION } from '@quacksteps/shared';
 import { adapters } from './adapters/index.ts';
 import { listFailingChecks } from './checks.ts';
 import { loadConfig } from './config.ts';

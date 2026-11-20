@@ -12,15 +12,15 @@ import type {
   ProgressStep,
   WorkspaceSaveRequest,
   WorkspaceStatus,
-} from '@quack/shared';
-import { INSTALL_COMMAND, PROTOCOL_VERSION, QUACK_VERSION, ciCommentText, isOlderVersion, parseCiReport } from '@quack/shared';
+} from '@quacksteps/shared';
+import { INSTALL_COMMAND, PROTOCOL_VERSION, QUACK_VERSION, ciCommentText, isOlderVersion, parseCiReport } from '@quacksteps/shared';
 import { type CompanionClient, newRequestId } from '../lib/client';
 import { prKey, selectionChip, selectionLabel } from '../lib/github';
 import type { PanelPage } from '../lib/page';
 import type { TabRequest } from '../lib/messages';
 import { AgentPicker, ModelPicker, StatusDot, agentLabel, agentNeedsUpdate, agentStateLabel, modelLabel } from './AgentPicker';
 import { AnswerBody } from './CiReport';
-import { DuckError, DuckSuccess, QuackLogo, StatusIcon } from './brand';
+import { DuckError, DuckSuccess, QuackstepsLogo, StatusIcon } from './brand';
 import { CommandBlock, FixSteps } from './FixSteps';
 import { ArrowUp, ChevronRight, Circle, Close, CollapsePanel, FileIcon, Plus, Retry, Search, StopSquare, Terminal, Warning } from './icons';
 import type { RepoLink } from './Markdown';
@@ -822,8 +822,8 @@ function PanelHeader({
   return (
     <header className="header">
       <div className="title-row">
-        <QuackLogo onDark size={16} />
-        <span className="wordmark display">Quack</span>
+        <QuackstepsLogo onDark size={16} />
+        <span className="wordmark display">Quacksteps</span>
         {pr && (
           <>
             <span className="divider" aria-hidden="true" />
@@ -921,7 +921,7 @@ function NoPullRequest({
   return (
     <div className="body start">
       <section className="start-head">
-        <QuackLogo size={44} />
+        <QuackstepsLogo size={44} />
         <div>
           <h1 className="display">No PR, no quack.</h1>
           <p className="muted">Open a pull request and the duck takes it from there.</p>
@@ -934,7 +934,7 @@ function NoPullRequest({
         <CompanionOffline
           error={install.error}
           onRetry={install.onRetry}
-          detail="Quack needs its local companion before it can read a pull request. Once installed, your browser starts it on its own."
+          detail="Quacksteps needs its local companion before it can read a pull request. Once installed, your browser starts it on its own."
         />
       )}
       {!install && workspace && (
@@ -1077,8 +1077,8 @@ function WorkspaceCard({
     ? workspace.prMatch?.detail ?? `No local clone of ${prKeyName} was found in your configured folders.`
     : !workspace.configured
       ? detectedRoots.length > 0 && blocked.length === 0
-        ? `Quack found ${plural(workspace.totalRepos, 'git repo')} in your default folders. Save them or add where your work repos live.`
-        : 'Tell Quack where your git clones live so it can inspect PRs locally.'
+        ? `Quacksteps found ${plural(workspace.totalRepos, 'git repo')} in your default folders. Save them or add where your work repos live.`
+        : 'Tell Quacksteps where your git clones live so it can inspect PRs locally.'
       : !workspace.gitAvailable
         ? 'The companion could not run git. Install git and test again.'
         : blocked.length > 0
@@ -1248,7 +1248,7 @@ function HowToAsk() {
       <ol>
         <li>Click a line number in the diff, Shift-click another to select a range.</li>
         <li>
-          Press <kbd>{SHORTCUT}</kbd> or click <strong>Ask Quack</strong>.
+          Press <kbd>{SHORTCUT}</kbd> or click <strong>Ask Quacksteps</strong>.
         </li>
       </ol>
     </section>
@@ -1334,7 +1334,7 @@ function Readiness({ connection, agent, pending }: { connection: Connection; age
     { state: othersDone ? 'done' : 'waiting', label: 'Other agents', meta: othersDone ? 'Done' : 'Waiting' },
   ];
   return (
-    <section className="prep-card" role="status" aria-label="Getting Quack ready">
+    <section className="prep-card" role="status" aria-label="Getting Quacksteps ready">
       <div className="prep-head">
         <StatusIcon kind="loading" size={18} />
         <ThinkingHeadline phase="waking" agent={agentLabel(agent)} activity={NO_ACTIVITY} initial="Waking the duck. It is not a morning duck." />
@@ -1399,7 +1399,7 @@ function AgentSetup({ status, onRecheck }: { status: AgentStatus; onRecheck: () 
 function CompanionOffline({
   error,
   onRetry,
-  detail = 'Quack needs its local companion to read this PR’s code. Once installed, your browser starts it on its own.',
+  detail = 'Quacksteps needs its local companion to read this PR’s code. Once installed, your browser starts it on its own.',
 }: {
   error: string;
   onRetry: () => void;

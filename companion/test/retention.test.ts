@@ -37,7 +37,7 @@ test('retention deletes old and excess worktrees only under the worktree root', 
   const calls: string[] = [];
   try {
     git(['init', '-q', clone]);
-    git(['-C', clone, '-c', 'user.email=quack@example.com', '-c', 'user.name=Quack', 'commit', '--allow-empty', '-m', 'init']);
+    git(['-C', clone, '-c', 'user.email=quack@example.com', '-c', 'user.name=Quacksteps', 'commit', '--allow-empty', '-m', 'init']);
     fs.mkdirSync(repoDir, { recursive: true });
     for (const [dir, n] of [
       [pr1, 1],

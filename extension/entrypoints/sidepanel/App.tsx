@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Browser } from 'wxt/browser';
 import { browser } from 'wxt/browser';
-import type { CodeSelection, PrRef } from '@quack/shared';
+import type { CodeSelection, PrRef } from '@quacksteps/shared';
 import { Panel } from '../../components/Panel';
 import { CompanionClient } from '../../lib/client';
 import { parsePrUrl } from '../../lib/github';
@@ -46,7 +46,7 @@ export function App() {
       if (fromPage && tabIdRef.current === tab.id) setContext(fromPage);
       setNotice(undefined);
     } catch {
-      setNotice('Reload this GitHub tab so Quack can read the PR title and your diff selections.');
+      setNotice('Reload this GitHub tab so Quacksteps can read the PR title and your diff selections.');
     }
   }
 

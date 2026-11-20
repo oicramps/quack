@@ -1,12 +1,12 @@
-// Quack's only UI inside GitHub's page: a floating "Ask Quack" button above the
+// Quacksteps's only UI inside GitHub's page: a floating "Ask Quacksteps" button above the
 // selected diff lines. It lives in a shadow root so GitHub's styles don't reach it.
-import logo from '../assets/brand/quack-logo-on-dark.svg?raw';
+import logo from '../assets/brand/quacksteps-logo-on-dark.svg?raw';
 
 const SHORTCUT = /Mac/.test(navigator.platform) ? '⌘⇧K' : 'Ctrl+Shift+K';
 
 const ICON = `<span class="badge">${logo.replace(/\s(role|aria-label)="[^"]*"/g, '').replace('<svg', '<svg aria-hidden="true" width="15" height="10"')}</span>`;
 
-// The logo sits on an ink circle because the duck would vanish into a yellow fill. Same in light and dark.
+// The logo sits on an ink circle because the footprint would vanish into a yellow fill. Same in light and dark.
 const STYLE = `
   :host { all: initial; }
   button {
@@ -42,7 +42,7 @@ const MARGIN = 8;
 export function createFloatingButton(onAsk: () => void): FloatingButton {
   const host = document.createElement('quack-ask');
   const root = host.attachShadow({ mode: 'closed' });
-  root.innerHTML = `<style>${STYLE}</style><button type="button" title="Ask Quack about the selected lines (${SHORTCUT})">${ICON}<span>Ask Quack</span><kbd>${SHORTCUT}</kbd></button>`;
+  root.innerHTML = `<style>${STYLE}</style><button type="button" title="Ask Quacksteps about the selected lines (${SHORTCUT})">${ICON}<span>Ask Quacksteps</span><kbd>${SHORTCUT}</kbd></button>`;
   const button = root.querySelector('button')!;
   // Keep the diff's text selection when the button is pressed.
   host.addEventListener('mousedown', (e) => e.preventDefault());
@@ -57,7 +57,7 @@ export function createFloatingButton(onAsk: () => void): FloatingButton {
 
   return {
     showAbove(top, right, lines) {
-      button.title = lines ? `Ask Quack about ${lines} (${SHORTCUT})` : `Ask Quack (${SHORTCUT})`;
+      button.title = lines ? `Ask Quacksteps about ${lines} (${SHORTCUT})` : `Ask Quacksteps (${SHORTCUT})`;
       host.style.display = 'block';
       const { width, height } = host.getBoundingClientRect();
       const y = top - height - 4;

@@ -1,5 +1,5 @@
-import type { AgentEvent, AskRequest, AgentStatus, CompanionMessage, ErrorCode, FixStep, ProgressStep } from '@quack/shared';
-import { AGENT_TIMEOUT_MS } from '@quack/shared';
+import type { AgentEvent, AskRequest, AgentStatus, CompanionMessage, ErrorCode, FixStep, ProgressStep } from '@quacksteps/shared';
+import { AGENT_TIMEOUT_MS } from '@quacksteps/shared';
 import { adapters } from './adapters/index.ts';
 import { collectCi } from './checks.ts';
 import { loadConfig } from './config.ts';

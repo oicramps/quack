@@ -1,8 +1,8 @@
-# Releasing Quack & Privacy Policy
+# Releasing Quacksteps & Privacy Policy
 
-Quack ships two artifacts synchronized to a single `QUACK_VERSION` in `shared/src/constants.ts`:
+Quacksteps ships two artifacts synchronized to a single `QUACK_VERSION` in `shared/src/constants.ts`:
 
-- **Browser extension (`@quack/extension`)**: Chrome Web Store (`hkdgklakkcffcmegdagdoigpaefhlipj`) and Edge Add-ons.
+- **Browser extension (`@quacksteps/extension`)**: Chrome Web Store (`hkdgklakkcffcmegdagdoigpaefhlipj`) and Edge Add-ons.
 - **Local companion (`quack-companion`)**: npm registry (`npx quack-companion@latest install`), the repository's GitHub Packages page (`@oicramps/quack-companion`), and GitHub Releases (`install.sh`, `quack-companion.cjs`, `.sha256`, `.tgz`).
 
 > **Note on `PROTOCOL_VERSION`**: Bump `QUACK_VERSION` on every release. Bump `PROTOCOL_VERSION` **only** when a wire-protocol change breaks compatibility between the extension and an already-installed companion.
@@ -48,7 +48,7 @@ A push to `main` alone won't retry, because the GitHub Release for that version 
 
 ### 1. npm OIDC Trusted Publishing (No `NPM_TOKEN` Secret Needed)
 Configured at `https://www.npmjs.com/package/quack-companion/access` under **Trusted Publisher (GitHub Actions)**:
-- **Owner**: `oicramps` | **Repository**: `quack` | **Workflow**: `release.yml` | **Environment**: empty | **Allow `npm publish`**: enabled.
+- **Owner**: `oicramps` | **Repository**: `quacksteps` | **Workflow**: `release.yml` | **Environment**: empty | **Allow `npm publish`**: enabled.
 
 The `npm` job fails with `404 Not Found - PUT https://registry.npmjs.org/quack-companion` when any of these fields don't match the run exactly; npm then publishes anonymously. Its verbose log shows the OIDC exchange and why it was refused.
 
@@ -67,32 +67,32 @@ Configured at `Settings -> Secrets and variables -> Actions`:
 ### 3. Building Store Assets Locally
 
 ```sh
-yarn workspace @quack/extension zip       # Builds keyless store zip in extension/.output/store/
-yarn workspace @quack/extension preview   # Starts preview server for 1280x800 screenshots
-yarn workspace @quack/extension icons     # Regenerates extension/public/icon/*.png
+yarn workspace @quacksteps/extension zip       # Builds keyless store zip in extension/.output/store/
+yarn workspace @quacksteps/extension preview   # Starts preview server for 1280x800 screenshots
+yarn workspace @quacksteps/extension icons     # Regenerates extension/public/icon/*.png
 ```
 
 ---
 
 ## Store Listing Reference
 
-- **Single purpose**: *Quack lets you ask your own local AI agent about the code in a GitHub pull request you already have open, without checking that pull request out.*
+- **Single purpose**: *Quacksteps lets you ask your own local AI agent about the code in a GitHub pull request you already have open, without checking that pull request out.*
 
 | Permission | Justification |
 | --- | --- |
 | `nativeMessaging` | Communicates with the local companion process (`quack-companion`) that runs the user's installed AI CLI. |
-| `sidePanel` | Displays the Quack UI in the browser's side panel next to the pull request. |
+| `sidePanel` | Displays the Quacksteps UI in the browser's side panel next to the pull request. |
 | `storage` | Stores selected agent/model preferences and recently queried pull requests locally in `chrome.storage.local`. |
-| `https://github.com/*` | Reads PR metadata and selected diff lines from the active GitHub tab and renders the in-page Ask Quack button. |
+| `https://github.com/*` | Reads PR metadata and selected diff lines from the active GitHub tab and renders the in-page Ask Quacksteps button. |
 
 ---
 
 ## Privacy Policy
 
-Quack consists of a browser extension and an open-source local companion program (`quack-companion`) that run on your computer.
+Quacksteps consists of a browser extension and an open-source local companion program (`quack-companion`) that run on your computer.
 
-- **Data read by the extension**: Quack activates only on `github.com` pull request pages. It reads the open pull request's repository owner and name, pull request number, title, commit SHA, and any diff lines you select. It stores your chosen AI agent, model preference, and recently queried pull requests locally on your device (`chrome.storage.local`).
+- **Data read by the extension**: Quacksteps activates only on `github.com` pull request pages. It reads the open pull request's repository owner and name, pull request number, title, commit SHA, and any diff lines you select. It stores your chosen AI agent, model preference, and recently queried pull requests locally on your device (`chrome.storage.local`).
 - **Local processing**: The companion runs locally on your machine using your local git clone and, when inspecting failing checks, your authenticated GitHub CLI (`gh`). It invokes the local AI CLI you selected (Cursor or Claude Code) with your question and relevant repository context. Subsequent handling of that data is governed by the AI tool and account you configured.
 - **Menu bar**: On macOS, while the side panel is open, a menu bar icon shows the repository, pull request number, and current step only, on the local machine.
-- **No servers or telemetry**: Quack operates no backend servers, requires no Quack account, collects no analytics or usage telemetry, and does not sell, transmit, or share user data.
+- **No servers or telemetry**: Quacksteps operates no backend servers, requires no Quacksteps account, collects no analytics or usage telemetry, and does not sell, transmit, or share user data.
 - **Data removal**: Uninstalling the browser extension deletes all locally stored preferences. Running `npx quack-companion uninstall` removes the native messaging registration and `~/.quack/bin`. Running `npx quack-companion prune` (also applied when the companion starts) deletes `pr-<n>` review worktrees under `~/.quack/worktrees` that are older than `retentionDays` (default 7) and, if more than `maxWorktrees` (default 20) remain, the oldest past that cap.

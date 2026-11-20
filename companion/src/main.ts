@@ -1,4 +1,4 @@
-import { QUACK_VERSION } from '@quack/shared';
+import { QUACK_VERSION } from '@quacksteps/shared';
 import { adapters } from './adapters/index.ts';
 import { loadConfig } from './config.ts';
 import { startHost } from './host.ts';

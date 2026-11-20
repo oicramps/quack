@@ -1,5 +1,5 @@
-import logo from '../assets/brand/quack-logo.svg?raw';
-import logoOnDark from '../assets/brand/quack-logo-on-dark.svg?raw';
+import logo from '../assets/brand/quacksteps-logo.svg?raw';
+import logoOnDark from '../assets/brand/quacksteps-logo-on-dark.svg?raw';
 import duckSuccess from '../assets/brand/duck-success.svg?raw';
 import duckError from '../assets/brand/duck-error.svg?raw';
 import statusLoading from '../assets/brand/status-loading.svg?raw';
@@ -21,13 +21,13 @@ function Art({ svg, width, height, className, hidden }: { svg: string; width: nu
 }
 
 /** The mark; `size` is its height (3:2). Off the header it follows the panel theme. */
-export function QuackLogo({ size = 16, onDark, hidden = true }: { size?: number; onDark?: boolean; hidden?: boolean }) {
+export function QuackstepsLogo({ size = 16, onDark, hidden = true }: { size?: number; onDark?: boolean; hidden?: boolean }) {
   const props = { width: size * 1.5, height: size, hidden };
-  if (onDark) return <Art svg={logoOnDark} className="quack-logo" {...props} />;
+  if (onDark) return <Art svg={logoOnDark} className="quacksteps-logo" {...props} />;
   return (
     <>
-      <Art svg={logo} className="quack-logo on-light" {...props} />
-      <Art svg={logoOnDark} className="quack-logo on-dark" {...props} />
+      <Art svg={logo} className="quacksteps-logo on-light" {...props} />
+      <Art svg={logoOnDark} className="quacksteps-logo on-dark" {...props} />
     </>
   );
 }
