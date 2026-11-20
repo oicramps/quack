@@ -114,9 +114,9 @@ yarn test                                   # Run companion unit tests
 yarn typecheck                              # Type-check all workspaces
 ```
 
-To load your local build in Chrome, Edge, or Brave: open `chrome://extensions` (`brave://extensions` in Brave), enable **Developer mode**, click **Load unpacked**, and select `extension/.output/chrome-mv3` (uses `DEV_EXTENSION_ID`, requires `yarn install-host`).
+To load your local build in Chrome, Edge, or Brave: open `chrome://extensions` (`brave://extensions` in Brave), enable **Developer mode**, click **Load unpacked**, and select `extension/dist/chrome-mv3` (uses `DEV_EXTENSION_ID`, requires `yarn install-host`).
 
-To load it in Firefox: run `yarn workspace @quacksteps/extension build -b firefox`, open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on**, and pick `extension/.output/firefox-mv3/manifest.json`. Firefox uses the same add-on id (`quacksteps@oicramps`) for temporary and AMO installs, so `yarn install-host` covers both.
+To load it in Firefox: run `yarn workspace @quacksteps/extension build -b firefox`, open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on**, and pick `extension/dist/firefox-mv3/manifest.json`. Firefox uses the same add-on id (`quacksteps@oicramps`) for temporary and AMO installs, so `yarn install-host` covers both.
 
 ## Further Reading
 

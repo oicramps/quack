@@ -74,7 +74,7 @@ Configured at `Settings -> Secrets and variables -> Actions`:
 ### 3. Building Store Assets Locally
 
 ```sh
-yarn workspace @quacksteps/extension zip       # Builds keyless store zip in extension/.output/store/
+yarn workspace @quacksteps/extension zip       # Builds keyless store zip in extension/dist/store/
 yarn workspace @quacksteps/extension preview   # Starts preview server for 1280x800 screenshots
 yarn workspace @quacksteps/extension icons     # Regenerates extension/public/icon/*.png
 ```

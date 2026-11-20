@@ -9,6 +9,6 @@ yarn install --frozen-lockfile
 QUACK_STORE=1 yarn workspace @quacksteps/extension wxt build -b firefox
 ```
 
-The built add-on is in `extension/.output/store/firefox-mv3/` and matches the submitted package.
+The built add-on is in `extension/dist/store/firefox-mv3/` and matches the submitted package.
 
 The add-on talks only to its local native-messaging host (`com.quack.companion`, published separately as the `quack-companion` npm package) and reads `github.com` pull request pages. It sends no data to any server of its own.

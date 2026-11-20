@@ -93,10 +93,10 @@ jobs:
           yarn workspace @quacksteps/extension zip
           yarn workspace @quacksteps/extension zip -b edge
           yarn workspace @quacksteps/extension zip -b firefox
-          cp extension/.output/store/quackstepsextension-*-chrome.zip release/
-          cp extension/.output/store/quackstepsextension-*-edge.zip release/
-          cp extension/.output/store/quackstepsextension-*-firefox.zip release/
-          cp extension/.output/store/quackstepsextension-*-sources.zip release/
+          cp extension/dist/store/quackstepsextension-*-chrome.zip release/
+          cp extension/dist/store/quackstepsextension-*-edge.zip release/
+          cp extension/dist/store/quackstepsextension-*-firefox.zip release/
+          cp extension/dist/store/quackstepsextension-*-sources.zip release/
 
       - if: steps.check.outputs.should_release == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

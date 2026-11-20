@@ -8,7 +8,7 @@ const store = process.env.QUACK_STORE === '1';
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
-  outDir: store ? '.output/store' : '.output',
+  outDir: store ? 'dist/store' : 'dist',
   // WXT defaults Firefox to MV2; every browser gets MV3.
   manifestVersion: 3,
   manifest: ({ browser }) => {
@@ -46,7 +46,7 @@ export default defineConfig({
     // AMO reviewers rebuild the add-on from this zip, so it holds the whole
     // workspace the extension needs (shared/, lockfile), not just extension/.
     sourcesRoot: '..',
-    excludeSources: ['companion/**', '.github/**', '.claude/**', 'store-assets/**', 'mac/**', '**/.output/**', '**/.wxt/**'],
+    excludeSources: ['companion/**', '.github/**', '.claude/**', 'store-assets/**', 'mac/**', '**/dist/**', '**/.wxt/**'],
   },
   webExt: {
     startUrls: ['https://github.com/ProjetoParcas/mynah/pull/14/files'],
