@@ -14,7 +14,7 @@ Quacksteps is split into three TypeScript workspaces so the browser UI and local
 
 ```mermaid
 flowchart TB
-  subgraph Browser["Chrome / Edge / Brave (Manifest V3)"]
+  subgraph Browser["Chrome / Edge / Brave / Firefox (Manifest V3)"]
     CS["github.content.ts<br/>PR metadata, diff selection & Ask button"]
     SP["Side Panel (React)<br/>Thread UI, CI cards & review drafts"]
     BG["background.ts<br/>Multiplexes 1 native port by requestId"]
@@ -102,7 +102,7 @@ After every turn, `session.ts` checks `git status --porcelain` in the worktree (
 
 | Boundary | Mechanism |
 | --- | --- |
-| **Origin allowlist** | `startHost` checks Chrome's `chrome-extension://<id>/` argument before reading `stdin`. The store id is always allowed. The unpacked dev id is allowed only when the launcher was installed with `--dev` (`QUACK_ALLOW_DEV=1`). |
+| **Origin allowlist** | `startHost` checks Chrome's `chrome-extension://<id>/` argument (or, from Firefox, the add-on id passed after the manifest path) before reading `stdin`. The store id and the Firefox id `quacksteps@oicramps` are always allowed. The unpacked Chromium dev id is allowed only when the launcher was installed with `--dev` (`QUACK_ALLOW_DEV=1`). Firefox registers through `~/Library/Application Support/Mozilla/NativeMessagingHosts` (macOS) or `~/.mozilla/native-messaging-hosts` (Linux) with `allowed_extensions`. |
 | **No shell execution** | External tools (`git`, `gh`, `cursor-agent`, `claude`) run via `execFile` / `spawn` argument arrays (`exec.ts`), never a shell. Git is additionally locked to `core.hooksPath=/dev/null` and `core.fsmonitor=false`. |
 | **Strict input validation** | `validate.ts` enforces length caps and regexes on all wire fields; model names, branches, session IDs, and workflow names reject leading `-` to block flag injection. Commit ids from `gh` have to match a SHA before they are passed to git. CI logs are redacted before they enter a prompt. |
 | **Frame bounds** | Incoming frames cap at 64 MB; outgoing text deltas split at 64 KB (`MAX_TEXT_DELTA`) to stay under Chrome's 1 MB native messaging limit. |

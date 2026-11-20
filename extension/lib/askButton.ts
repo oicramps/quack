@@ -76,3 +76,38 @@ export function createFloatingButton(onAsk: () => void): FloatingButton {
     },
   };
 }
+
+const HINT_STYLE = `
+  :host { all: initial; }
+  div {
+    display: flex; align-items: center; gap: 10px; box-sizing: border-box; max-width: 360px;
+    padding: 10px 12px 10px 10px; border-radius: 8px;
+    font: 13px/18px -apple-system, system-ui, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    color: #f3f5f7; background: #1c222e; box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  }
+  .badge { width: 28px; height: 28px; }
+  kbd {
+    padding: 0 5px; border-radius: 4px; font: 700 11px/18px -apple-system, system-ui, sans-serif;
+    color: #1c222e; background: #f2c94c;
+  }
+`;
+
+let hintTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Shown when the browser would not open the panel from the page (Firefox only
+ * opens its sidebar from the toolbar button or a keyboard shortcut). The
+ * selection is already attached, so opening the panel picks it up.
+ */
+export function showOpenHint(): void {
+  let host = document.querySelector('quack-hint');
+  if (!host) {
+    host = document.createElement('quack-hint');
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = `<style>${HINT_STYLE}</style><div role="status">${ICON}<span>Lines attached. Open Quacksteps from the toolbar or press <kbd>${SHORTCUT}</kbd>.</span></div>`;
+    (host as HTMLElement).style.cssText = 'position: fixed; right: 16px; bottom: 16px; z-index: 2147483646;';
+    document.documentElement.append(host);
+  }
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => host?.remove(), 6000);
+}

@@ -20,6 +20,12 @@ export const DEV_EXTENSION_ID = 'ikkjkdmcnmifldjmajjjgabanjomhikf';
  */
 export const STORE_EXTENSION_ID = 'hkdgklakkcffcmegdagdoigpaefhlipj';
 
+/**
+ * Firefox add-on ID (`browser_specific_settings.gecko.id`). Firefox uses the same
+ * ID for temporary (development) and AMO installs. It can never change once on AMO.
+ */
+export const FIREFOX_EXTENSION_ID = 'quacksteps@oicramps';
+
 /** Valid 32-char Chrome extension IDs permitted in the native host manifest. */
 export const ALLOWED_EXTENSION_IDS = [DEV_EXTENSION_ID, STORE_EXTENSION_ID].filter((id) => /^[a-p]{32}$/.test(id));
 

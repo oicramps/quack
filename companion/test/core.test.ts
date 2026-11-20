@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { MessageDecoder, encodeMessage } from '../src/framing.ts';
 import { isAllowedOrigin } from '../src/host.ts';
-import { install, nativeMessagingHostDirs, selectInstallHostDirs, uninstall } from '../src/install.ts';
+import { firefoxHostDir, install, nativeMessagingHostDirs, selectInstallHostDirs, uninstall } from '../src/install.ts';
 import { buildCiPrompt, buildFollowUp, buildPrompt } from '../src/prompt.ts';
 import { hasConfigFile } from '../src/config.ts';
 import { contractHome } from '../src/paths.ts';
@@ -84,12 +84,53 @@ test('install registers installed browsers without creating unused channel dirs,
   }
 });
 
+test('Firefox hosts live in one Mozilla folder per OS', () => {
+  assert.deepEqual(firefoxHostDir('darwin', '/Users/ada'), {
+    dir: '/Users/ada/Library/Application Support/Mozilla/NativeMessagingHosts',
+    profileDir: '/Users/ada/Library/Application Support/Firefox',
+  });
+  assert.deepEqual(firefoxHostDir('linux', '/home/ada'), {
+    dir: '/home/ada/.mozilla/native-messaging-hosts',
+    profileDir: '/home/ada/.mozilla/firefox',
+  });
+  assert.throws(() => firefoxHostDir('win32', '/Users/ada'), /Unsupported platform/);
+});
+
+test('install registers Firefox by add-on id only once Firefox has run, and uninstall removes it', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'quack-firefox-test-'));
+  try {
+    const home = path.join(tmp, 'home');
+    const binDir = path.join(tmp, 'bin');
+    const bundle = path.join(tmp, 'bundle.cjs');
+    fs.writeFileSync(bundle, 'console.log("ok");\n');
+    const manifest = path.join(home, '.mozilla', 'native-messaging-hosts', 'com.quack.companion.json');
+
+    install(bundle, { binDir, platform: 'linux', home, env: {} });
+    assert.ok(!fs.existsSync(manifest));
+
+    fs.mkdirSync(path.join(home, '.mozilla', 'firefox'), { recursive: true });
+    install(bundle, { binDir, platform: 'linux', home, env: {} });
+    const parsed = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+    assert.deepEqual(parsed.allowed_extensions, ['quacksteps@oicramps']);
+    assert.equal(parsed.allowed_origins, undefined);
+    assert.equal(parsed.name, 'com.quack.companion');
+    assert.equal(parsed.path, path.join(binDir, 'quack-companion'));
+
+    uninstall({ binDir, platform: 'linux', home, env: {} });
+    assert.ok(!fs.existsSync(manifest));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('only the Quacksteps extension origin is accepted', () => {
   assert.ok(isAllowedOrigin('chrome-extension://hkdgklakkcffcmegdagdoigpaefhlipj/'));
   assert.ok(!isAllowedOrigin('chrome-extension://ikkjkdmcnmifldjmajjjgabanjomhikf/'));
   assert.ok(isAllowedOrigin('chrome-extension://ikkjkdmcnmifldjmajjjgabanjomhikf/', true));
   assert.ok(!isAllowedOrigin('chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/'));
   assert.ok(!isAllowedOrigin(undefined));
+  assert.ok(isAllowedOrigin('quacksteps@oicramps'));
+  assert.ok(!isAllowedOrigin('someone-else@example.com'));
 });
 
 test('only real commit ids are passed to git', async () => {

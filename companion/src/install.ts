@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, HOST_NAME } from '@quacksteps/shared';
+import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, FIREFOX_EXTENSION_ID, HOST_NAME } from '@quacksteps/shared';
 import menuBarSwift from './menubar.swift';
 import { BIN_DIR, HOME } from './paths.ts';
 
@@ -74,6 +74,21 @@ export function selectInstallHostDirs(
   const targets = resolveTargets(platform, home, env);
   const existing = targets.filter((t) => fs.existsSync(path.dirname(t.dir))).map((t) => t.dir);
   return existing.length > 0 ? existing : targets.filter((t) => t.primary).map((t) => t.dir);
+}
+
+/**
+ * Firefox reads native-messaging manifests from one folder per OS (not per
+ * profile), and `profileDir` exists once Firefox has run. Linux ignores XDG here.
+ */
+export function firefoxHostDir(platform: NodeJS.Platform = process.platform, home = HOME): { dir: string; profileDir: string } {
+  if (platform === 'darwin') {
+    const support = path.join(home, 'Library', 'Application Support');
+    return { dir: path.join(support, 'Mozilla', 'NativeMessagingHosts'), profileDir: path.join(support, 'Firefox') };
+  }
+  if (platform === 'linux') {
+    return { dir: path.join(home, '.mozilla', 'native-messaging-hosts'), profileDir: path.join(home, '.mozilla', 'firefox') };
+  }
+  throw new Error(`Unsupported platform: ${platform}. Quacksteps supports macOS and Linux.`);
 }
 
 function allowedIds(dev: boolean): string[] {
@@ -195,7 +210,7 @@ export function compileMenuBar(source: string, outFile: string, env: NodeJS.Proc
 /**
  * Copies the bundled companion to ~/.quack/bin, writes a launcher that runs it
  * with this exact node binary (Chrome's PATH may not include it), and registers
- * the native messaging host for installed Chrome, Edge, Brave, and Chromium browsers.
+ * the native messaging host for installed Chrome, Edge, Brave, Chromium, and Firefox browsers.
  * Pass `{ dev: true }` to also allow the unpacked extension id.
  */
 export function install(bundlePath: string, opts: InstallOptions = {}): void {
@@ -222,15 +237,22 @@ export function install(bundlePath: string, opts: InstallOptions = {}): void {
     type: 'stdio',
     allowed_origins: ids.map((id) => `chrome-extension://${id}/`),
   };
-  for (const dir of selectInstallHostDirs(opts.platform, opts.home, opts.env)) {
+  const write = (dir: string, content: object) => {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${HOST_NAME}.json`);
-    fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
+    fs.writeFileSync(file, JSON.stringify(content, null, 2) + '\n');
     console.log(`Registered ${file}`);
+  };
+  for (const dir of selectInstallHostDirs(opts.platform, opts.home, opts.env)) write(dir, manifest);
+  // Firefox names the add-on by its gecko id rather than an origin.
+  const firefox = firefoxHostDir(opts.platform, opts.home);
+  if (fs.existsSync(firefox.profileDir)) {
+    const { allowed_origins: _origins, ...shared } = manifest;
+    write(firefox.dir, { ...shared, allowed_extensions: [FIREFOX_EXTENSION_ID] });
   }
   console.log(`\nCompanion installed at ${launcher}`);
   console.log(`Node: ${process.execPath} (${process.version})`);
-  console.log(`Extension IDs allowed: ${ids.join(', ')}`);
+  console.log(`Extension IDs allowed: ${[...ids, FIREFOX_EXTENSION_ID].join(', ')}`);
   if (menuBarNote) console.log(menuBarNote);
   console.log('\nRestart the browser if the panel still says the companion is not connected.');
 }
@@ -253,7 +275,8 @@ function installMenuBar(binDir: string, opts: InstallOptions): string {
 
 export function uninstall(opts: Pick<InstallOptions, 'binDir' | 'platform' | 'home' | 'env'> = {}): void {
   const binDir = opts.binDir ?? BIN_DIR;
-  for (const dir of nativeMessagingHostDirs(opts.platform, opts.home, opts.env)) {
+  const dirs = [...nativeMessagingHostDirs(opts.platform, opts.home, opts.env), firefoxHostDir(opts.platform, opts.home).dir];
+  for (const dir of dirs) {
     const file = path.join(dir, `${HOST_NAME}.json`);
     if (fs.existsSync(file)) {
       fs.rmSync(file);

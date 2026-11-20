@@ -92,8 +92,11 @@ jobs:
         run: |
           yarn workspace @quacksteps/extension zip
           yarn workspace @quacksteps/extension zip -b edge
+          yarn workspace @quacksteps/extension zip -b firefox
           cp extension/.output/store/quackstepsextension-*-chrome.zip release/
           cp extension/.output/store/quackstepsextension-*-edge.zip release/
+          cp extension/.output/store/quackstepsextension-*-firefox.zip release/
+          cp extension/.output/store/quackstepsextension-*-sources.zip release/
 
       - if: steps.check.outputs.should_release == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -279,3 +282,46 @@ jobs:
             exit 0
           fi
           yarn wxt submit --edge-zip ../release/quackstepsextension-*-edge.zip
+
+  firefox:
+    needs: build
+    if: needs.build.outputs.should_release == 'true'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release
+          path: release
+      - name: Submit to Firefox Add-ons (AMO)
+        working-directory: extension
+        env:
+          FIREFOX_EXTENSION_ID: quacksteps@oicramps
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+        run: |
+          if [ -z "$FIREFOX_JWT_ISSUER" ] || [ -z "$FIREFOX_JWT_SECRET" ]; then
+            echo "AMO API secrets not configured; skipping Firefox submission."
+            exit 0
+          fi
+          # AMO reviewers rebuild from the sources zip (see docs/amo-review.md).
+          # A repeat of a version AMO already has is a skip, like the Chrome job.
+          set +e
+          output=$(yarn wxt submit \
+            --firefox-zip ../release/quackstepsextension-*-firefox.zip \
+            --firefox-sources-zip ../release/quackstepsextension-*-sources.zip 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ] && printf '%s\n' "$output" | grep -Eiq 'version .* already exists|already been uploaded'; then
+            echo "AMO already has this version; skipping."
+            exit 0
+          fi
+          exit "$status"
