@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="32" fill="#1c222e"/>
-  <g transform="translate(22 36) scale(2.3333)">
-    <path d="M7 3C4.6 3 4.4 4.8 4.4 7V9.6C4.4 11 3.6 12 2 12C3.6 12 4.4 13 4.4 14.4V17C4.4 19.2 4.6 21 7 21" fill="none" stroke="#f3f5f7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M29 3C31.4 3 31.6 4.8 31.6 7V9.6C31.6 11 32.4 12 34 12C32.4 12 31.6 13 31.6 14.4V17C31.6 19.2 31.4 21 29 21" fill="none" stroke="#f3f5f7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect width="128" height="128" rx="28" fill="#1c222e"/>
+  <g transform="translate(8.2 26.8) scale(3.1)">
+    <path d="M7 3C4.6 3 4.4 4.8 4.4 7V9.6C4.4 11 3.6 12 2 12C3.6 12 4.4 13 4.4 14.4V17C4.4 19.2 4.6 21 7 21" fill="none" stroke="#f3f5f7" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M29 3C31.4 3 31.6 4.8 31.6 7V9.6C31.6 11 32.4 12 34 12C32.4 12 31.6 13 31.6 14.4V17C31.6 19.2 31.4 21 29 21" fill="none" stroke="#f3f5f7" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
     <g transform="rotate(-12 18 12)">
       <path d="M18 21.4Q16.6 21.4 16 20L10.6 8.8Q9.9 6.6 12 6.8Q15.3 10.6 16.8 4.2Q18 1.8 19.2 4.2Q20.7 10.6 24 6.8Q26.1 6.6 25.4 8.8L20 20Q19.4 21.4 18 21.4Z" fill="#ff980f"/>
       <path d="M18 17.2L12.2 8.2M18 17.2V4.8M18 17.2L23.8 8.2" fill="none" stroke="#ffcc33" stroke-width="1.2" stroke-linecap="round"/>
