@@ -4,7 +4,34 @@ import logo from '../assets/brand/quacksteps-logo-on-dark.svg?raw';
 
 const SHORTCUT = /Mac/.test(navigator.platform) ? '⌘⇧K' : 'Ctrl+Shift+K';
 
-const ICON = `<span class="badge">${logo.replace(/\s(role|aria-label)="[^"]*"/g, '').replace('<svg', '<svg aria-hidden="true" width="15" height="10"')}</span>`;
+// Everything here is built with DOM calls, never innerHTML, so no markup string
+// reaches GitHub's page (AMO's linter flags innerHTML in content scripts).
+
+/** The logo on its ink circle. Parsed as SVG, so it can't carry HTML. */
+function badge(): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.className = 'badge';
+  const svg = new DOMParser().parseFromString(logo, 'image/svg+xml').documentElement;
+  svg.removeAttribute('role');
+  svg.removeAttribute('aria-label');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('width', '15');
+  svg.setAttribute('height', '10');
+  span.append(document.importNode(svg, true));
+  return span;
+}
+
+function styleTag(css: string): HTMLStyleElement {
+  const style = document.createElement('style');
+  style.textContent = css;
+  return style;
+}
+
+function textTag<K extends keyof HTMLElementTagNameMap>(tag: K, text: string): HTMLElementTagNameMap[K] {
+  const el = document.createElement(tag);
+  el.textContent = text;
+  return el;
+}
 
 // The logo sits on an ink circle because the footprint would vanish into a yellow fill. Same in light and dark.
 const STYLE = `
@@ -42,8 +69,11 @@ const MARGIN = 8;
 export function createFloatingButton(onAsk: () => void): FloatingButton {
   const host = document.createElement('quack-ask');
   const root = host.attachShadow({ mode: 'closed' });
-  root.innerHTML = `<style>${STYLE}</style><button type="button" title="Ask Quacksteps about the selected lines (${SHORTCUT})">${ICON}<span>Ask Quacksteps</span><kbd>${SHORTCUT}</kbd></button>`;
-  const button = root.querySelector('button')!;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.title = `Ask Quacksteps about the selected lines (${SHORTCUT})`;
+  button.append(badge(), textTag('span', 'Ask Quacksteps'), textTag('kbd', SHORTCUT));
+  root.append(styleTag(STYLE), button);
   // Keep the diff's text selection when the button is pressed.
   host.addEventListener('mousedown', (e) => e.preventDefault());
   button.addEventListener('click', (e) => {
@@ -75,4 +105,48 @@ export function createFloatingButton(onAsk: () => void): FloatingButton {
       host.remove();
     },
   };
+}
+
+const HINT_STYLE = `
+  :host { all: initial; }
+  div {
+    display: flex; align-items: center; gap: 10px; box-sizing: border-box; max-width: 360px;
+    padding: 10px 12px 10px 10px; border-radius: 8px;
+    font: 13px/18px -apple-system, system-ui, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    color: #f3f5f7; background: #1c222e; box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  }
+  .badge {
+    display: flex; align-items: center; justify-content: center; flex: none;
+    width: 28px; height: 28px; border-radius: 999px; background: #2b3242;
+  }
+  .badge svg { display: block; }
+  kbd {
+    padding: 0 5px; border-radius: 4px; font: 700 11px/18px -apple-system, system-ui, sans-serif;
+    color: #1c222e; background: #f2c94c;
+  }
+`;
+
+let hintTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Shown when the browser would not open the panel from the page (Firefox only
+ * opens its sidebar from the toolbar button or a keyboard shortcut). The
+ * selection is already attached, so opening the panel picks it up.
+ */
+export function showOpenHint(): void {
+  let host = document.querySelector('quack-hint');
+  if (!host) {
+    host = document.createElement('quack-hint');
+    const root = host.attachShadow({ mode: 'open' });
+    const message = document.createElement('span');
+    message.append('Lines attached. Open Quacksteps from the toolbar or press ', textTag('kbd', SHORTCUT), '.');
+    const box = document.createElement('div');
+    box.setAttribute('role', 'status');
+    box.append(badge(), message);
+    root.append(styleTag(HINT_STYLE), box);
+    (host as HTMLElement).style.cssText = 'position: fixed; right: 16px; bottom: 16px; z-index: 2147483646;';
+    document.documentElement.append(host);
+  }
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => host?.remove(), 6000);
 }

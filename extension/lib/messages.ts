@@ -23,3 +23,6 @@ export type RuntimeMessage =
   | { kind: 'panel-ready' }
   /** The in-page "Ask Quacksteps" button was clicked; opens the side panel with the selection. */
   | { kind: 'ask-selection'; selection: CodeSelection };
+
+/** Background's reply to `ask-selection`: whether the panel is showing. */
+export type AskSelectionResponse = { open: boolean };

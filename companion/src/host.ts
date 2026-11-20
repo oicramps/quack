@@ -1,5 +1,5 @@
 import type { AgentId, AgentStatus, CompanionMessage, ExtensionMessage } from '@quacksteps/shared';
-import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, PROTOCOL_VERSION, QUACK_VERSION } from '@quacksteps/shared';
+import { ALLOWED_EXTENSION_IDS, DEV_EXTENSION_ID, FIREFOX_EXTENSION_ID, PROTOCOL_VERSION, QUACK_VERSION } from '@quacksteps/shared';
 import { adapters } from './adapters/index.ts';
 import { listFailingChecks } from './checks.ts';
 import { loadConfig } from './config.ts';
@@ -16,16 +16,18 @@ const STATUS_TTL_MS = 60_000;
 const MAX_TEXT_DELTA = 64 * 1024;
 
 /**
- * Checks whether the caller's `chrome-extension://<id>/` origin is allowlisted.
- * The unpacked dev id is accepted only when this process was launched with
- * `QUACK_ALLOW_DEV=1` (the `--dev` install). Store installs leave it unset.
+ * Checks whether the caller is allowlisted: a Chromium `chrome-extension://<id>/`
+ * origin, or the Firefox add-on id. The unpacked Chromium dev id is accepted only
+ * when this process was launched with `QUACK_ALLOW_DEV=1` (the `--dev` install).
+ * Store installs leave it unset. Firefox uses one id for development and AMO.
  */
 export function isAllowedOrigin(origin: string | undefined, allowDev = process.env.QUACK_ALLOW_DEV === '1'): boolean {
+  if (origin === FIREFOX_EXTENSION_ID) return true;
   const ids = allowDev ? ALLOWED_EXTENSION_IDS : ALLOWED_EXTENSION_IDS.filter((id) => id !== DEV_EXTENSION_ID);
   return ids.some((id) => origin === `chrome-extension://${id}/`);
 }
 
-/** Runs the Chrome Native Messaging stdio event loop for an allowlisted extension origin. */
+/** Runs the native messaging stdio event loop for an allowlisted extension. */
 export function startHost(origin: string | undefined): void {
   if (!isAllowedOrigin(origin)) {
     log('rejected caller origin', String(origin));

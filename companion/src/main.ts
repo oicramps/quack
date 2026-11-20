@@ -1,4 +1,4 @@
-import { QUACK_VERSION } from '@quacksteps/shared';
+import { HOST_NAME, QUACK_VERSION } from '@quacksteps/shared';
 import { adapters } from './adapters/index.ts';
 import { loadConfig } from './config.ts';
 import { startHost } from './host.ts';
@@ -12,6 +12,12 @@ async function main(): Promise<void> {
   // Chrome passes the caller's origin as the first argument.
   if (arg?.startsWith('chrome-extension://')) {
     startHost(arg);
+    return;
+  }
+  // Firefox passes the host manifest's path, then the add-on id.
+  const firefoxId = process.argv[3];
+  if (arg?.endsWith(`${HOST_NAME}.json`) && firefoxId) {
+    startHost(firefoxId);
     return;
   }
   switch (arg) {
@@ -46,7 +52,7 @@ async function main(): Promise<void> {
       console.log(`quack-companion ${QUACK_VERSION}
 
 Usage:
-  quack-companion install [--dev]            Register the native messaging host for Chrome, Edge, Brave, and Chromium
+  quack-companion install [--dev]            Register the native messaging host for Chrome, Edge, Brave, Chromium, and Firefox
                                              --dev also allows the unpacked extension id
   quack-companion uninstall                  Remove the host registration
   quack-companion link [path] [owner/repo]   Map an existing local clone in ~/.quack/config.json

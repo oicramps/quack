@@ -25,3 +25,4 @@ jobs:
       - run: yarn typecheck
       - run: yarn workspace quack-companion build
       - run: yarn workspace @quacksteps/extension zip
+      - run: yarn workspace @quacksteps/extension zip -b firefox

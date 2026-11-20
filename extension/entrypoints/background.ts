@@ -3,17 +3,39 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import type { CodeSelection, CompanionMessage, ExtensionMessage } from '@quacksteps/shared';
 import { HOST_NAME } from '@quacksteps/shared';
-import type { FromBackground, RuntimeMessage, TabRequest, ToBackground } from '../lib/messages';
+import type { AskSelectionResponse, FromBackground, RuntimeMessage, TabRequest, ToBackground } from '../lib/messages';
 
 type Port = Browser.runtime.Port;
 
+/** Firefox's sidebar API. WXT's types follow Chrome, which has `sidePanel` instead. */
+interface SidebarAction {
+  open(): Promise<void>;
+  toggle(): Promise<void>;
+  isOpen(details: { windowId?: number }): Promise<boolean>;
+}
+const sidebar = (browser as unknown as { sidebarAction?: SidebarAction }).sidebarAction;
+
+/**
+ * Opens the panel. Chrome and Firefox both require a user gesture, so call this
+ * before anything asynchronous. Firefox only counts the toolbar button and
+ * keyboard commands as gestures, so a request from the page is refused.
+ */
+function openPanel(windowId: number): Promise<void> {
+  return import.meta.env.FIREFOX ? sidebar!.open() : browser.sidePanel.open({ windowId });
+}
+
 export default defineBackground(() => {
-  // The toolbar icon opens Chrome's side panel.
-  browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  // The toolbar icon opens the side panel (Chrome) or toggles the sidebar (Firefox).
+  if (import.meta.env.FIREFOX) {
+    browser.action.onClicked.addListener(() => {
+      sidebar!.toggle().catch(() => {});
+    });
+  } else {
+    browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  }
 
   // Cmd/Ctrl+Shift+K and the in-page "Ask Quacksteps" button open the panel and attach
-  // the selected diff lines. sidePanel.open needs the user gesture, so it is
-  // called before anything asynchronous.
+  // the selected diff lines.
   let pendingAttach: { tabId: number; selection: CodeSelection | null } | null = null;
 
   const attach = (tabId: number, selection: CodeSelection | null) => {
@@ -25,7 +47,7 @@ export default defineBackground(() => {
   browser.commands.onCommand.addListener((command, tab) => {
     if (command !== 'ask-about-selection' || tab?.id === undefined) return;
     const tabId = tab.id;
-    browser.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+    openPanel(tab.windowId).catch(() => {});
     browser.tabs
       .sendMessage(tabId, { kind: 'get-selection' } satisfies TabRequest)
       .catch(() => null)
@@ -34,8 +56,17 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener((msg: RuntimeMessage, sender, sendResponse) => {
     if (msg?.kind === 'ask-selection' && sender.tab?.id !== undefined) {
-      browser.sidePanel.open({ windowId: sender.tab.windowId }).catch(() => {});
+      const windowId = sender.tab.windowId;
+      const opening = openPanel(windowId);
       attach(sender.tab.id, msg.selection);
+      // Tells the page whether the panel is showing, so it can point to the
+      // toolbar button or shortcut when Firefox refused to open the sidebar.
+      opening
+        .then(() => true)
+        .catch(() => (import.meta.env.FIREFOX ? sidebar!.isOpen({ windowId }) : false))
+        .catch(() => false)
+        .then((open) => sendResponse({ open } satisfies AskSelectionResponse));
+      return true;
     } else if (msg?.kind === 'panel-ready') {
       sendResponse(pendingAttach);
       pendingAttach = null;

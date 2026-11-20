@@ -2,7 +2,7 @@
 
 Quacksteps ships two artifacts synchronized to a single `QUACK_VERSION` in `shared/src/constants.ts`:
 
-- **Browser extension (`@quacksteps/extension`)**: Chrome Web Store (`hkdgklakkcffcmegdagdoigpaefhlipj`) and Edge Add-ons.
+- **Browser extension (`@quacksteps/extension`)**: Chrome Web Store (`hkdgklakkcffcmegdagdoigpaefhlipj`), Edge Add-ons, and Firefox Add-ons (AMO, id `quacksteps@oicramps`).
 - **Local companion (`quack-companion`)**: npm registry (`npx quack-companion@latest install`), the repository's GitHub Packages page (`@oicramps/quack-companion`), and GitHub Releases (`install.sh`, `quack-companion.cjs`, `.sha256`, `.tgz`).
 
 > **Note on `PROTOCOL_VERSION`**: Bump `QUACK_VERSION` on every release. Bump `PROTOCOL_VERSION` **only** when a wire-protocol change breaks compatibility between the extension and an already-installed companion.
@@ -64,10 +64,17 @@ Configured at `Settings -> Secrets and variables -> Actions`:
 
 *(Optional Edge Add-ons secrets: `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY`.)*
 
+*(Optional Firefox Add-ons secrets: `FIREFOX_JWT_ISSUER` and `FIREFOX_JWT_SECRET`, the API key and secret from https://addons.mozilla.org/developers/addon/api/key/. Without them the `firefox` job skips.)*
+
+#### Firefox Add-ons (AMO)
+- The add-on id is `quacksteps@oicramps` (`FIREFOX_EXTENSION_ID` in `shared/src/constants.ts`). It can never change once the add-on is on AMO.
+- **First upload is manual**: the API only adds versions to an existing add-on. Upload `quackstepsextension-<version>-firefox.zip` and `quackstepsextension-<version>-sources.zip` from the GitHub Release at https://addons.mozilla.org/developers/addon/submit/, and point reviewers to `docs/amo-review.md` for build steps.
+- After that, each release's `firefox` job submits the new version and its sources zip. AMO reviewers rebuild from the sources zip, which holds the root workspace files, `shared/` and `extension/` (see `zip` in `extension/wxt.config.ts`).
+
 ### 3. Building Store Assets Locally
 
 ```sh
-yarn workspace @quacksteps/extension zip       # Builds keyless store zip in extension/.output/store/
+yarn workspace @quacksteps/extension zip       # Builds keyless store zip in extension/dist/store/
 yarn workspace @quacksteps/extension preview   # Starts preview server for 1280x800 screenshots
 yarn workspace @quacksteps/extension icons     # Regenerates extension/public/icon/*.png
 ```

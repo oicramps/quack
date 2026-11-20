@@ -1,6 +1,6 @@
 # quack-companion
 
-Local native messaging host for **[Quacksteps](https://chromewebstore.google.com/detail/quacksteps/hkdgklakkcffcmegdagdoigpaefhlipj)** — the Chrome, Edge, and Brave extension that lets you ask your local **Claude Code** or **Cursor** about any GitHub pull request with full repository context, without stashing work or switching branches.
+Local native messaging host for **[Quacksteps](https://chromewebstore.google.com/detail/quacksteps/hkdgklakkcffcmegdagdoigpaefhlipj)** — the Chrome, Edge, Brave, and Firefox extension that lets you ask your local **Claude Code** or **Cursor** about any GitHub pull request with full repository context, without stashing work or switching branches.
 
 - **Install Extension**: [Quacksteps on Chrome Web Store](https://chromewebstore.google.com/detail/quacksteps/hkdgklakkcffcmegdagdoigpaefhlipj)
 - **Source & Docs**: [github.com/oicramps/quacksteps](https://github.com/oicramps/quacksteps)
@@ -9,7 +9,7 @@ Local native messaging host for **[Quacksteps](https://chromewebstore.google.com
 
 ## Quick Start
 
-1. Install the **[Quacksteps extension](https://chromewebstore.google.com/detail/quacksteps/hkdgklakkcffcmegdagdoigpaefhlipj)** in Chrome, Edge, or Brave. Brave installs that same Chrome Web Store listing.
+1. Install the **[Quacksteps extension](https://chromewebstore.google.com/detail/quacksteps/hkdgklakkcffcmegdagdoigpaefhlipj)** in Chrome, Edge, or Brave (Brave installs that same Chrome Web Store listing), or from addons.mozilla.org in Firefox 140+.
 2. Register the local companion once in your terminal:
 
 ```sh

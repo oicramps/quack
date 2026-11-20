@@ -46,7 +46,13 @@ export function App() {
       if (fromPage && tabIdRef.current === tab.id) setContext(fromPage);
       setNotice(undefined);
     } catch {
-      setNotice('Reload this GitHub tab so Quacksteps can read the PR title and your diff selections.');
+      // Firefox lets people revoke site access, and then the page script never runs.
+      const allowed = await browser.permissions.contains({ origins: ['https://github.com/*'] }).catch(() => true);
+      setNotice(
+        allowed
+          ? 'Reload this GitHub tab so Quacksteps can read the PR title and your diff selections.'
+          : 'Quacksteps can’t read github.com. Allow it in Add-ons and themes → Quacksteps → Permissions, then reload this tab.',
+      );
     }
   }
 

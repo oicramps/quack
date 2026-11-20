@@ -1,7 +1,7 @@
 import type { CodeSelection } from '@quacksteps/shared';
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { createFloatingButton } from '../lib/askButton';
+import { createFloatingButton, showOpenHint } from '../lib/askButton';
 import {
   commentBoxFor,
   githubTheme,
@@ -18,7 +18,7 @@ import {
   readPrStats,
   readPrTitle,
 } from '../lib/github';
-import type { RuntimeMessage, TabRequest } from '../lib/messages';
+import type { AskSelectionResponse, RuntimeMessage, TabRequest } from '../lib/messages';
 import type { PageContext } from '../lib/page';
 
 /** Merges `fresh` into `known`, preserving previous values when a field is `undefined`. */
@@ -50,7 +50,14 @@ export default defineContentScript({
       if (!selection) return;
       context = { ...context, lastSelection: selection };
       publish();
-      browser.runtime.sendMessage({ kind: 'ask-selection', selection } satisfies RuntimeMessage).catch(() => {});
+      browser.runtime
+        .sendMessage({ kind: 'ask-selection', selection } satisfies RuntimeMessage)
+        .then((reply) => {
+          // Firefox opens the sidebar only from the toolbar or the shortcut. The
+          // selection is attached either way; point the user to one of them.
+          if ((reply as AskSelectionResponse | undefined)?.open === false) showOpenHint();
+        })
+        .catch(() => {});
     };
 
     // Lines picked with the line numbers live in the URL hash. One already there

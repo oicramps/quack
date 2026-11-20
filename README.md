@@ -2,11 +2,11 @@
 
 Ask your local **Claude Code** or **Cursor** about any GitHub pull request with full repository context—without stashing local work or switching branches.
 
-Quacksteps pairs a Chrome, Edge, and Brave side-panel extension with a lightweight local companion ([`quack-companion`](https://www.npmjs.com/package/quack-companion)). When you ask a question on a PR, the companion fetches the PR commit into a separate, detached git worktree and runs your local AI CLI there in read-only mode.
+Quacksteps pairs a Chrome, Edge, Brave, and Firefox side-panel extension with a lightweight local companion ([`quack-companion`](https://www.npmjs.com/package/quack-companion)). When you ask a question on a PR, the companion fetches the PR commit into a separate, detached git worktree and runs your local AI CLI there in read-only mode.
 
 ```mermaid
 flowchart LR
-  GH["GitHub PR Tab<br/>(diff & line selection)"] --> EXT["Quacksteps Side Panel<br/>(Chrome / Edge / Brave)"]
+  GH["GitHub PR Tab<br/>(diff & line selection)"] --> EXT["Quacksteps Side Panel<br/>(Chrome / Edge / Brave / Firefox)"]
   EXT <-->|"Native Messaging<br/>(stdio)"| COMP["quack-companion<br/>(spawned on demand)"]
   COMP -->|"git fetch pull/N/head"| CLONE["Your Local Clone<br/>(branches untouched)"]
   CLONE --> WT["Detached Worktree<br/>(~/.quack/worktrees)"]
@@ -27,8 +27,10 @@ flowchart LR
 ### 1. Install the Extension
 Install **[Quacksteps from the Chrome Web Store](https://chromewebstore.google.com/detail/quacksteps/hkdgklakkcffcmegdagdoigpaefhlipj)** in Chrome, Edge, or Brave. Brave uses that same listing.
 
+On **Firefox 140+**, install Quacksteps from addons.mozilla.org. It opens in Firefox's sidebar: click the toolbar icon or press **`Cmd/Ctrl+Shift+K`**. Firefox only opens the sidebar from those two, so the in-page **Ask Quacksteps** button attaches your lines and tells you to open it.
+
 ### 2. Register the Local Companion
-Run once in your terminal (registers Chrome, Edge, Brave, and Chromium, including Brave Beta, Dev, and Nightly):
+Run once in your terminal (registers Chrome, Edge, Brave, Chromium, including Brave Beta, Dev, and Nightly, and Firefox if it has been run once):
 
 ```sh
 npx quack-companion@latest install
@@ -112,7 +114,9 @@ yarn test                                   # Run companion unit tests
 yarn typecheck                              # Type-check all workspaces
 ```
 
-To load your local build in Chrome, Edge, or Brave: open `chrome://extensions` (`brave://extensions` in Brave), enable **Developer mode**, click **Load unpacked**, and select `extension/.output/chrome-mv3` (uses `DEV_EXTENSION_ID`, requires `yarn install-host`).
+To load your local build in Chrome, Edge, or Brave: open `chrome://extensions` (`brave://extensions` in Brave), enable **Developer mode**, click **Load unpacked**, and select `extension/dist/chrome-mv3` (uses `DEV_EXTENSION_ID`, requires `yarn install-host`).
+
+To load it in Firefox: run `yarn workspace @quacksteps/extension build -b firefox`, open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on**, and pick `extension/dist/firefox-mv3/manifest.json`. Firefox uses the same add-on id (`quacksteps@oicramps`) for temporary and AMO installs, so `yarn install-host` covers both.
 
 ## Further Reading
 
